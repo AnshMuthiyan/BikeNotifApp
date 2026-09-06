@@ -48,10 +48,14 @@ jobs:
             echo "The restored keystore is empty. Check ANDROID_KEYSTORE_BASE64."
             exit 1
           fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/bike-notif-release.jks" -storepass "$BIKE_KEYSTORE_PASSWORD" -alias "$BIKE_KEY_ALIAS" > /dev/null; then
+            echo "The keystore was restored, but BIKE_KEYSTORE_PASSWORD or BIKE_KEY_ALIAS is incorrect."
+            exit 1
+          fi
           echo "BIKE_KEYSTORE_PATH=$RUNNER_TEMP/bike-notif-release.jks" >> "$GITHUB_ENV"
 
       - name: Build signed App Bundle
-        run: bash ./gradlew bundleRelease
+        run: bash ./gradlew bundleRelease --stacktrace
 
       - name: Upload bundle artifact
         uses: actions/upload-artifact@v4
