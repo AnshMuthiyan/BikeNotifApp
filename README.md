@@ -18,3 +18,5 @@ The manual `Release Android App` workflow builds a signed `app-release.aab` and 
 Run the workflow from the **Actions** tab with `Publish to Google Play Internal testing` set to `false` while testing the build. After creating a Google Play service account and granting it Play Console release access, add its JSON as `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` and run the workflow with publishing enabled.
 
 The package name is `com.anshmuthiyan.ebikeweather`. The Play Console app must be created with this exact package name before publishing.
+
+Weather alerts use the first event on the next calendar day as the forecast cutoff. The app requests calendar read access when permissions are set up; if access is denied or no event exists tomorrow, it uses a 24-hour forecast window.

@@ -64,11 +64,9 @@ class WeatherLogicEngine {
             val prefs = context.getSharedPreferences("EBikePrefs", Context.MODE_PRIVATE)
             // A torrential forecast at 30% probability scores about 55 with this formula.
             val severityThreshold = prefs.getInt("RAIN_SEVERITY_THRESHOLD", 55).coerceIn(10, 100)
-            val immediateHoursThreshold = prefs.getInt("IMMEDIATE_HOURS_THRESHOLD", 4)
-
             val response = api.getHourlyForecast(lat, lng)
             val now = LocalDateTime.now()
-            val evaluationLimit = now.plusHours(24)
+            val evaluationLimit = CalendarWeatherWindow.forecastEnd(context, now)
             
             for (i in response.hourly.time.indices) {
                 val forecastTime = LocalDateTime.parse(response.hourly.time[i])
@@ -86,25 +84,14 @@ class WeatherLogicEngine {
                         val weatherType = if (tempC <= 0.0) "Snow" else "Rain"
                         val hoursUntil = ChronoUnit.HOURS.between(now, forecastTime).toInt()
 
-                        return if (hoursUntil <= immediateHoursThreshold) {
-                            WeatherAlert(
-                                AlertLevel.IMMEDIATE_THREAT,
-                                weatherType,
-                                hoursUntil,
-                                severityScore,
-                                probabilityPercent,
-                                precipMmPerHour
-                            )
-                        } else {
-                            WeatherAlert(
-                                AlertLevel.DELAYED_THREAT,
-                                weatherType,
-                                hoursUntil,
-                                severityScore,
-                                probabilityPercent,
-                                precipMmPerHour
-                            )
-                        }
+                        return WeatherAlert(
+                            AlertLevel.IMMEDIATE_THREAT,
+                            weatherType,
+                            hoursUntil,
+                            severityScore,
+                            probabilityPercent,
+                            precipMmPerHour
+                        )
                     }
                 }
             }

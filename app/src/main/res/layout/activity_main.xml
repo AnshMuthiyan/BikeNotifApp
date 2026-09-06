@@ -38,19 +38,6 @@
         android:inputType="number"
         android:hint="e.g., 30" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Immediate Threat Window (Hours)"
-        android:layout_marginTop="16dp"/>
-
-    <EditText
-        android:id="@+id/etImmediateHours"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="number"
-        android:hint="e.g., 4" />
-
     <Button
         android:id="@+id/btnSaveSettings"
         android:layout_width="match_parent"

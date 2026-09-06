@@ -59,12 +59,10 @@ class MainActivity : AppCompatActivity() {
         val btnSetHome = findViewById<Button>(R.id.btnSetHome)
         val tvCurrentLocation = findViewById<TextView>(R.id.tvCurrentLocation)
         val etPrecipProb = findViewById<EditText>(R.id.etPrecipProb)
-        val etImmediateHours = findViewById<EditText>(R.id.etImmediateHours)
         val btnSaveSettings = findViewById<Button>(R.id.btnSaveSettings)
 
         tvCurrentLocation.text = "Home: ${prefs.getFloat("HOME_LAT", 0f)}, ${prefs.getFloat("HOME_LNG", 0f)}"
         etPrecipProb.setText(prefs.getInt("RAIN_SEVERITY_THRESHOLD", 55).toString())
-        etImmediateHours.setText(prefs.getInt("IMMEDIATE_HOURS_THRESHOLD", 4).toString())
 
         btnSetHome.setOnClickListener {
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
@@ -87,11 +85,8 @@ class MainActivity : AppCompatActivity() {
 
         btnSaveSettings.setOnClickListener {
             val severityThreshold = etPrecipProb.text.toString().toIntOrNull() ?: 55
-            val hours = etImmediateHours.text.toString().toIntOrNull() ?: 4
-
             prefs.edit()
                 .putInt("RAIN_SEVERITY_THRESHOLD", severityThreshold.coerceIn(10, 100))
-                .putInt("IMMEDIATE_HOURS_THRESHOLD", hours)
                 .apply()
 
             val lat = prefs.getFloat("HOME_LAT", 0f).toDouble()
@@ -118,7 +113,8 @@ class MainActivity : AppCompatActivity() {
         val permissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACTIVITY_RECOGNITION
+            Manifest.permission.ACTIVITY_RECOGNITION,
+            Manifest.permission.READ_CALENDAR
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
