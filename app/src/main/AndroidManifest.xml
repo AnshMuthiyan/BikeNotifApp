@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Required Permissions -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:label="E-Bike Weather"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AppCompat.DayNight">
+        
+        <!-- Keep your activities and receivers below this line -->
+
+        <!-- ========================================== -->
+        <!-- 2. THE UI (PERMISSION HANDLER)             -->
+        <!-- ========================================== -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ========================================== -->
+        <!-- 3. THE SPEED TRAP SERVICE                  -->
+        <!-- ========================================== -->
+        <!-- Runs briefly inside the geofence to catch the exact second you stop -->
+        <service
+            android:name=".BikeStopDetectionService"
+            android:exported="false" />
+
+        <!-- ========================================== -->
+        <!-- 4. THE BROADCAST RECEIVERS                 -->
+        <!-- ========================================== -->
+        
+        <!-- Listens for the Geofence Breach -->
+        <receiver
+            android:name=".GeofenceReceiver"
+            android:exported="false" />
+
+        <!-- Listens globally for when you start/stop riding your bike -->
+        <receiver
+            android:name=".GlobalBikeReceiver"
+            android:exported="false" />
+
+        <!-- Jumpstarts the Geofence & Bike Tracker when the phone turns on -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>

@@ -1,0 +1,11 @@
+R_DEF: Internal format may change without notice
+local
+id btnSaveSettings
+id btnSetHome
+id etImmediateHours
+id etPrecipProb
+id tvCurrentLocation
+layout activity_main
+mipmap ic_launcher
+string app_name
+style Theme.EBikeWeather
