@@ -3,12 +3,29 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def signingProperties = new Properties()
+def signingPropertiesFile = rootProject.file("keystore.properties")
+if (signingPropertiesFile.exists()) {
+    signingPropertiesFile.withInputStream { signingProperties.load(it) }
+}
+
+def releaseKeystorePath = signingProperties.getProperty("storeFile") ?: System.getenv("BIKE_KEYSTORE_PATH")
+def releaseKeystorePassword = signingProperties.getProperty("storePassword") ?: System.getenv("BIKE_KEYSTORE_PASSWORD")
+def releaseKeyAlias = signingProperties.getProperty("keyAlias") ?: System.getenv("BIKE_KEY_ALIAS")
+def releaseKeyPassword = signingProperties.getProperty("keyPassword") ?: System.getenv("BIKE_KEY_PASSWORD")
+def hasReleaseSigning = [
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+].every { it != null && !it.isEmpty() }
+
 android {
-    namespace 'com.yourname.ebikeweather'
+    namespace 'com.anshmuthiyan.ebikeweather'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.yourname.ebikeweather"
+        applicationId "com.anshmuthiyan.ebikeweather"
         minSdk 29
         targetSdk 34
         versionCode 1
@@ -21,6 +38,25 @@ android {
     }
     kotlinOptions {
         jvmTarget = '17'
+    }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
     }
 }
 

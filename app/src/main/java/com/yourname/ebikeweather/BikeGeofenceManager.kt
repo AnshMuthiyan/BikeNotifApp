@@ -1,4 +1,4 @@
-package com.yourname.ebikeweather
+package com.anshmuthiyan.ebikeweather
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent

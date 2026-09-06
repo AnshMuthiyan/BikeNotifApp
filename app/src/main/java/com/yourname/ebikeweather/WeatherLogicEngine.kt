@@ -1,4 +1,4 @@
-package com.yourname.ebikeweather
+package com.anshmuthiyan.ebikeweather
 
 import android.content.Context
 import com.google.gson.annotations.SerializedName

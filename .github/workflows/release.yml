@@ -1,0 +1,60 @@
+name: Release Android App
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_to_play:
+        description: Publish the bundle to Google Play Internal testing
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      BIKE_KEYSTORE_PASSWORD: ${{ secrets.BIKE_KEYSTORE_PASSWORD }}
+      BIKE_KEY_ALIAS: ${{ secrets.BIKE_KEY_ALIAS }}
+      BIKE_KEY_PASSWORD: ${{ secrets.BIKE_KEY_PASSWORD }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Restore release keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/bike-notif-release.jks"
+          echo "BIKE_KEYSTORE_PATH=$RUNNER_TEMP/bike-notif-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed App Bundle
+        run: ./gradlew bundleRelease
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bike-notif-release
+          path: app/build/outputs/bundle/release/app-release.aab
+
+      - name: Publish to Google Play Internal testing
+        if: ${{ inputs.publish_to_play == true }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.anshmuthiyan.ebikeweather
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed

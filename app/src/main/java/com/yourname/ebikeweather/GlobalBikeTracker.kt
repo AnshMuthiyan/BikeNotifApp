@@ -1,4 +1,4 @@
-package com.yourname.ebikeweather
+package com.anshmuthiyan.ebikeweather
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
@@ -20,7 +20,7 @@ class GlobalBikeTracker(private val context: Context) {
     private val tag = "GlobalBikeTracker"
 
     companion object {
-        const val ACTION_BIKE_LOCATION_UPDATE = "com.yourname.ebikeweather.ACTION_BIKE_LOCATION_UPDATE"
+        const val ACTION_BIKE_LOCATION_UPDATE = "com.anshmuthiyan.ebikeweather.ACTION_BIKE_LOCATION_UPDATE"
     }
 
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)

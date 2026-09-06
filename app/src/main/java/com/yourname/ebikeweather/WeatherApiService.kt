@@ -1,4 +1,4 @@
-package com.yourname.ebikeweather
+package com.anshmuthiyan.ebikeweather
 
 import retrofit2.http.GET
 import retrofit2.http.Query

@@ -1,4 +1,4 @@
-package com.yourname.ebikeweather
+package com.anshmuthiyan.ebikeweather
 
 import android.Manifest
 import android.content.Context
