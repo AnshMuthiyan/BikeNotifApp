@@ -32,6 +32,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".RainScoreExplanationActivity"
+            android:exported="false" />
+
         <!-- ========================================== -->
         <!-- 3. THE SPEED TRAP SERVICE                  -->
         <!-- ========================================== -->

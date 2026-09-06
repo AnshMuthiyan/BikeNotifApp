@@ -6,8 +6,6 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Query
-import kotlin.math.roundToInt
-import kotlin.math.sqrt
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 
@@ -53,12 +51,6 @@ interface OpenMeteoApi {
 class WeatherLogicEngine {
     private val api = OpenMeteoApi.create()
 
-    // Drizzle is ignored by design. We score only meaningful rain rates.
-    private val drizzleMaxMmPerHour = 0.2
-    private val lightRainUpperMmPerHour = 2.5
-    private val moderateRainUpperMmPerHour = 7.6
-    private val heavyRainReferenceMmPerHour = 10.0
-
     suspend fun checkEbikeParkingConditions(context: Context, lat: Double, lng: Double): WeatherAlert {
         try {
             val prefs = context.getSharedPreferences("EBikePrefs", Context.MODE_PRIVATE)
@@ -73,12 +65,12 @@ class WeatherLogicEngine {
                 
                 if (forecastTime.isAfter(now) && forecastTime.isBefore(evaluationLimit)) {
                     val precipMmPerHour = response.hourly.precipitationMm[i]
-                    if (precipMmPerHour <= drizzleMaxMmPerHour) {
+                    if (precipMmPerHour <= RainScorePolicy.drizzleMaxMmPerHour) {
                         continue
                     }
 
                     val probabilityPercent = response.hourly.precipitationProbability[i].coerceIn(0, 100)
-                    val severityScore = computeRainSeverityScore(probabilityPercent, precipMmPerHour)
+                    val severityScore = RainScorePolicy.score(probabilityPercent, precipMmPerHour)
                     if (severityScore >= severityThreshold) {
                         val tempC = response.hourly.temperature2m[i]
                         val weatherType = if (tempC <= 0.0) "Snow" else "Rain"
@@ -102,27 +94,11 @@ class WeatherLogicEngine {
         }
     }
 
-    private fun computeRainSeverityScore(probabilityPercent: Int, precipMmPerHour: Double): Int {
-        val probabilityNorm = (probabilityPercent / 100.0).coerceIn(0.0, 1.0)
-        val intensityNorm = normalizeIntensity(precipMmPerHour)
-        return (100.0 * sqrt(probabilityNorm * intensityNorm)).roundToInt().coerceIn(0, 100)
-    }
-
-    private fun normalizeIntensity(precipMmPerHour: Double): Double {
-        if (precipMmPerHour <= drizzleMaxMmPerHour) {
-            return 0.0
-        }
-
-        val scaled = (precipMmPerHour - drizzleMaxMmPerHour) /
-            (heavyRainReferenceMmPerHour - drizzleMaxMmPerHour)
-        return scaled.coerceIn(0.0, 1.0)
-    }
-
     fun classifyRainAmount(precipMmPerHour: Double): String {
         return when {
-            precipMmPerHour <= drizzleMaxMmPerHour -> "Drizzle"
-            precipMmPerHour <= lightRainUpperMmPerHour -> "Light rain"
-            precipMmPerHour <= moderateRainUpperMmPerHour -> "Moderate rain"
+            precipMmPerHour <= RainScorePolicy.drizzleMaxMmPerHour -> "Drizzle"
+            precipMmPerHour <= RainScorePolicy.lightRainUpperMmPerHour -> "Light rain"
+            precipMmPerHour <= RainScorePolicy.moderateRainUpperMmPerHour -> "Moderate rain"
             else -> "Heavy rain"
         }
     }

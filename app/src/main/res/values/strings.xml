@@ -1,3 +1,14 @@
 <resources>
     <string name="app_name">E-Bike Weather</string>
+    <string name="rain_score_explanation">The app checks each hourly forecast from now until the first event on the next calendar day.
+
+Drizzle is ignored when precipitation is at or below %3$.1f mm/h. For meaningful precipitation, the score combines the forecast probability and rain intensity:
+
+Score = 100 x square root(probability x normalized intensity)
+
+Probability is the forecast percentage divided by 100. Intensity is scaled from 0 at %3$.1f mm/h to 1 at %6$.1f mm/h, then capped at 1. This keeps both confidence and amount important; heavy rain with low probability does not automatically trigger an alert.
+
+The current alert threshold is %1$d/100. A forecast triggers when its score reaches that threshold. Rain is classified as light through %4$.1f mm/h, moderate through %5$.1f mm/h, and heavy above that. Temperatures at or below 0 C are described as snow.
+
+If calendar access is denied or there is no event tomorrow, the app checks a 24-hour window instead.</string>
 </resources>

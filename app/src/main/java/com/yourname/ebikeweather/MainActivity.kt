@@ -3,6 +3,7 @@ package com.anshmuthiyan.ebikeweather
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
@@ -60,6 +61,11 @@ class MainActivity : AppCompatActivity() {
         val tvCurrentLocation = findViewById<TextView>(R.id.tvCurrentLocation)
         val etPrecipProb = findViewById<EditText>(R.id.etPrecipProb)
         val btnSaveSettings = findViewById<Button>(R.id.btnSaveSettings)
+        val btnRainScoreExplanation = findViewById<Button>(R.id.btnRainScoreExplanation)
+
+        btnRainScoreExplanation.setOnClickListener {
+            startActivity(Intent(this, RainScoreExplanationActivity::class.java))
+        }
 
         tvCurrentLocation.text = "Home: ${prefs.getFloat("HOME_LAT", 0f)}, ${prefs.getFloat("HOME_LNG", 0f)}"
         etPrecipProb.setText(prefs.getInt("RAIN_SEVERITY_THRESHOLD", 55).toString())
