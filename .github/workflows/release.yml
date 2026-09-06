@@ -51,7 +51,7 @@ jobs:
           echo "BIKE_KEYSTORE_PATH=$RUNNER_TEMP/bike-notif-release.jks" >> "$GITHUB_ENV"
 
       - name: Build signed App Bundle
-        run: ./gradlew bundleRelease
+        run: bash ./gradlew bundleRelease
 
       - name: Upload bundle artifact
         uses: actions/upload-artifact@v4
