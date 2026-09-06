@@ -1,6 +1,6 @@
 # E-Bike Weather App
 
-Android project scaffold for location-aware e-bike weather notifications.
+An Android app that notifies you when you bike home and rain is expected soon, so you can bring your bike downstairs and keep it dry.
 
 Package: `com.yourname.ebikeweather`
 
