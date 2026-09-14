@@ -16,6 +16,10 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
@@ -107,6 +111,14 @@ class MainActivity : AppCompatActivity() {
 
                 val globalTracker = GlobalBikeTracker(this)
                 globalTracker.start()
+                
+                val dailyWorkRequest = PeriodicWorkRequestBuilder<DailyClassSchedulerWorker>(24, TimeUnit.HOURS)
+                    .build()
+                WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                    "daily_class_scheduler",
+                    ExistingPeriodicWorkPolicy.KEEP,
+                    dailyWorkRequest
+                )
                 
                 Toast.makeText(this, "Settings Saved & Engines Started!", Toast.LENGTH_SHORT).show()
             } else {

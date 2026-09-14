@@ -51,4 +51,42 @@ object CalendarWeatherWindow {
             now.plusHours(fallbackHours)
         }
     }
+
+    fun getTodayClassesEndTime(context: Context): Long? {
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_CALENDAR
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return null
+        }
+
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val todayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val tomorrowStart = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+
+        val instancesUri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath(todayStart.toString())
+            .appendPath(tomorrowStart.toString())
+            .build()
+
+        return try {
+            context.contentResolver.query(
+                instancesUri,
+                arrayOf(CalendarContract.Instances.END),
+                null,
+                null,
+                "${CalendarContract.Instances.END} DESC"
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getLong(0)
+                } else {
+                    null
+                }
+            }
+        } catch (securityException: SecurityException) {
+            return null
+        }
+    }
 }

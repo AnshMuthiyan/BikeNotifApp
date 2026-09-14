@@ -61,4 +61,26 @@ class EBikeNotificationManager(private val context: Context) {
             }
         }
     }
+
+    fun showClassEndNotification() {
+        val title = "Classes Ended!"
+        val body = "Your classes for the day have ended."
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body)) 
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT) 
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+
+        with(NotificationManagerCompat.from(context)) {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                notify(1002, builder.build())
+            } else {
+                Log.e(tag, "Notification permission missing. Class end alert was not displayed.")
+            }
+        }
+    }
 }
