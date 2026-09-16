@@ -43,6 +43,8 @@ class WeatherCheckWorker(
 
         if (alert.level != AlertLevel.ALL_CLEAR) {
             EBikeNotificationManager(applicationContext).showParkingNotification(alert)
+        } else {
+            EBikeNotificationManager(applicationContext).showAllClearNotification()
         }
 
         return Result.success()

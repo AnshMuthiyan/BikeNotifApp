@@ -62,6 +62,23 @@ class EBikeNotificationManager(private val context: Context) {
         }
     }
 
+    fun showAllClearNotification() {
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("☀️ Weather is Clear!")
+            .setContentText("You are home and no rain is expected. Safe to leave bike out.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("You are home and no rain is expected. Safe to leave bike out."))
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+
+        with(NotificationManagerCompat.from(context)) {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                notify(1003, builder.build())
+            }
+        }
+    }
+
     fun showClassEndNotification() {
         val title = "Classes Ended!"
         val body = "Your classes for the day have ended."

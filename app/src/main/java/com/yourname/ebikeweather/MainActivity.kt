@@ -59,6 +59,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         checkBasicPermissions()
+        
+        val dailyWorkRequest = androidx.work.OneTimeWorkRequestBuilder<DailyClassSchedulerWorker>().build()
+        androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
+            "daily_class_scheduler_chain",
+            androidx.work.ExistingWorkPolicy.KEEP,
+            dailyWorkRequest
+        )
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val btnSetHome = findViewById<Button>(R.id.btnSetHome)
@@ -112,11 +119,10 @@ class MainActivity : AppCompatActivity() {
                 val globalTracker = GlobalBikeTracker(this)
                 globalTracker.start()
                 
-                val dailyWorkRequest = PeriodicWorkRequestBuilder<DailyClassSchedulerWorker>(24, TimeUnit.HOURS)
-                    .build()
-                WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-                    "daily_class_scheduler",
-                    ExistingPeriodicWorkPolicy.KEEP,
+                val dailyWorkRequest = androidx.work.OneTimeWorkRequestBuilder<DailyClassSchedulerWorker>().build()
+                WorkManager.getInstance(this).enqueueUniqueWork(
+                    "daily_class_scheduler_chain",
+                    androidx.work.ExistingWorkPolicy.KEEP,
                     dailyWorkRequest
                 )
                 
