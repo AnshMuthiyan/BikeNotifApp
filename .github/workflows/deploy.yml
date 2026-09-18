@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -32,7 +32,9 @@ jobs:
           BIKE_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           BIKE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           BIKE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew bundleRelease
+        run: |
+          chmod +x ./gradlew
+          ./gradlew bundleRelease
 
       - name: Upload to Google Play Console
         uses: r0adkll/upload-google-play@v1
