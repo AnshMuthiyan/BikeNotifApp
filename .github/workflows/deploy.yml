@@ -27,13 +27,12 @@ jobs:
           echo "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '\n\r ' | base64 --decode > app/release.keystore
 
       - name: Build Release AAB
-        env:
-          BIKE_KEYSTORE_PATH: release.keystore
-          BIKE_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          BIKE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          BIKE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
+          export BIKE_KEYSTORE_PATH="release.keystore"
+          export BIKE_KEYSTORE_PASSWORD=$(echo "${{ secrets.KEYSTORE_PASSWORD }}" | tr -d '\n\r ')
+          export BIKE_KEY_ALIAS=$(echo "${{ secrets.KEY_ALIAS }}" | tr -d '\n\r ')
+          export BIKE_KEY_PASSWORD=$(echo "${{ secrets.KEY_PASSWORD }}" | tr -d '\n\r ')
           ./gradlew bundleRelease --stacktrace
 
       - name: Upload to Google Play Console
