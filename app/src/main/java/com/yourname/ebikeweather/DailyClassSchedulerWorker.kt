@@ -16,17 +16,20 @@ class DailyClassSchedulerWorker(
         if (endTimeMillis != null) {
             val nowMillis = System.currentTimeMillis()
             if (endTimeMillis > nowMillis) {
-                val delayMillis = endTimeMillis - nowMillis
-                val work = OneTimeWorkRequestBuilder<ClassEndNotificationWorker>()
-                    .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
-                    .build()
-                
-                WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                    "class_end_notification",
-                    ExistingWorkPolicy.REPLACE,
-                    work
+                val intent = android.content.Intent(applicationContext, ClassEndReceiver::class.java)
+                val pendingIntent = android.app.PendingIntent.getBroadcast(
+                    applicationContext,
+                    101,
+                    intent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
                 )
-                Log.i("DailyClassScheduler", "Scheduled class end notification in ${delayMillis}ms")
+                val alarmManager = applicationContext.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, endTimeMillis, pendingIntent)
+                    Log.i("DailyClassScheduler", "Scheduled exact class end notification at $endTimeMillis")
+                } catch (e: SecurityException) {
+                    Log.e("DailyClassScheduler", "Exact alarm permission denied", e)
+                }
             } else {
                 Log.i("DailyClassScheduler", "Classes already ended today.")
             }

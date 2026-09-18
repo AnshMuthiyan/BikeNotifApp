@@ -22,14 +22,14 @@ def hasReleaseSigning = [
 
 android {
     namespace 'com.anshmuthiyan.ebikeweather'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
-        applicationId "com.anshmuthiyan.ebikeweather"
+        applicationId "com.muthiyan.ebike"
         minSdk 29
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        targetSdk 36
+        versionCode 3
+        versionName "1.02"
     }
     
     compileOptions {

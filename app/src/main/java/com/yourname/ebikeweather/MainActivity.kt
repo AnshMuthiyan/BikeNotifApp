@@ -119,6 +119,9 @@ class MainActivity : AppCompatActivity() {
                 val globalTracker = GlobalBikeTracker(this)
                 globalTracker.start()
                 
+                val geofenceManager = BikeGeofenceManager(this)
+                geofenceManager.setupApartmentGeofence(lat, lng)
+                
                 val dailyWorkRequest = androidx.work.OneTimeWorkRequestBuilder<DailyClassSchedulerWorker>().build()
                 WorkManager.getInstance(this).enqueueUniqueWork(
                     "daily_class_scheduler_chain",

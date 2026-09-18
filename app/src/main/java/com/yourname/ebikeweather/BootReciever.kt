@@ -18,6 +18,9 @@ class BootReceiver : BroadcastReceiver() {
             if (lat != 0.0 && lng != 0.0) {
                 val globalTracker = GlobalBikeTracker(context)
                 globalTracker.start()
+                
+                val geofenceManager = BikeGeofenceManager(context)
+                geofenceManager.setupApartmentGeofence(lat, lng)
             }
         }
     }

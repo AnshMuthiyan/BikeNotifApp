@@ -74,16 +74,23 @@ object CalendarWeatherWindow {
         return try {
             context.contentResolver.query(
                 instancesUri,
-                arrayOf(CalendarContract.Instances.END),
+                arrayOf(CalendarContract.Instances.END, CalendarContract.Instances.TITLE, CalendarContract.Instances.CALENDAR_DISPLAY_NAME),
                 null,
                 null,
                 "${CalendarContract.Instances.END} DESC"
             )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    cursor.getLong(0)
-                } else {
-                    null
+                var latestEndTime: Long? = null
+                val regex = Regex("^[A-Za-z]{3,4} \\d{3}.*")
+                while (cursor.moveToNext()) {
+                    val endTime = cursor.getLong(0)
+                    val title = cursor.getString(1) ?: ""
+                    val calName = cursor.getString(2) ?: ""
+                    if (calName.contains("Ansh Muthiyan", ignoreCase = true) || regex.matches(title)) {
+                        latestEndTime = endTime
+                        break
+                    }
                 }
+                latestEndTime
             }
         } catch (securityException: SecurityException) {
             return null
