@@ -53,4 +53,26 @@
         android:layout_marginTop="12dp"
         android:text="How the Rain Score Works" />
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#CCCCCC"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="12dp"/>
+
+    <TextView
+        android:id="@+id/tvOdometer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Distance since last charge: 0.0 miles"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/btnResetOdometer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="I Just Charged My Bike (Reset)" />
+
 </LinearLayout>

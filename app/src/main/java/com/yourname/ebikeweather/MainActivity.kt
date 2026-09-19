@@ -73,9 +73,21 @@ class MainActivity : AppCompatActivity() {
         val etPrecipProb = findViewById<EditText>(R.id.etPrecipProb)
         val btnSaveSettings = findViewById<Button>(R.id.btnSaveSettings)
         val btnRainScoreExplanation = findViewById<Button>(R.id.btnRainScoreExplanation)
+        val tvOdometer = findViewById<TextView>(R.id.tvOdometer)
+        val btnResetOdometer = findViewById<Button>(R.id.btnResetOdometer)
 
         btnRainScoreExplanation.setOnClickListener {
             startActivity(Intent(this, RainScoreExplanationActivity::class.java))
+        }
+
+        val totalMeters = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
+        val totalMiles = totalMeters * 0.000621371f
+        tvOdometer.text = String.format("Distance since last charge: %.1f miles", totalMiles)
+
+        btnResetOdometer.setOnClickListener {
+            prefs.edit().putFloat("TOTAL_BIKE_METERS", 0f).apply()
+            tvOdometer.text = "Distance since last charge: 0.0 miles"
+            Toast.makeText(this, "Odometer Reset!", Toast.LENGTH_SHORT).show()
         }
 
         tvCurrentLocation.text = "Home: ${prefs.getFloat("HOME_LAT", 0f)}, ${prefs.getFloat("HOME_LNG", 0f)}"

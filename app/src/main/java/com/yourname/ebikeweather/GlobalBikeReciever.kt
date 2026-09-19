@@ -31,9 +31,28 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                 HomeArrivalWork.enqueue(context)
                 editor.putBoolean("AWAY_FROM_HOME", false)
                       .putBoolean("PENDING_HOME_ARRIVAL", false)
+                      .remove("LAST_BIKE_LAT")
+                      .remove("LAST_BIKE_LNG")
+                      .remove("LAST_BIKE_LOCATION_TS")
                       .apply()
                 return
             }
+            val lastLat = prefs.getFloat("LAST_BIKE_LAT", 0f)
+            val lastLng = prefs.getFloat("LAST_BIKE_LNG", 0f)
+
+            if (lastLat != 0f && lastLng != 0f) {
+                val results = FloatArray(1)
+                android.location.Location.distanceBetween(lastLat.toDouble(), lastLng.toDouble(), location.latitude, location.longitude, results)
+                val distanceMeters = results[0]
+                
+                // Max speed of e-bike is ~20m/s. If 20 seconds passed, max distance is ~400m. 
+                // Ignore crazy GPS jumps (>1000m)
+                if (distanceMeters < 1000f) {
+                    val totalMeters = prefs.getFloat("TOTAL_BIKE_METERS", 0f) + distanceMeters
+                    prefs.edit().putFloat("TOTAL_BIKE_METERS", totalMeters).apply()
+                }
+            }
+
             prefs.edit()
                 .putFloat("LAST_BIKE_LAT", location.latitude.toFloat())
                 .putFloat("LAST_BIKE_LNG", location.longitude.toFloat())
@@ -63,6 +82,7 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                             val wasBiking = prefs.getBoolean("IS_CURRENTLY_BIKING", false)
                             if (wasBiking) {
                                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
+                                editor.remove("LAST_BIKE_LAT").remove("LAST_BIKE_LNG").remove("LAST_BIKE_LOCATION_TS")
                                 tracker.stopLocationUpdates()
                                 Log.i(tag, "Bike ride ended. Disabled location tracking.")
 
