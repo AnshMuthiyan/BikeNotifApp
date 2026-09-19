@@ -22,6 +22,18 @@ class GlobalBikeReceiver : BroadcastReceiver() {
             }
 
             val location = LocationResult.extractResult(intent)?.lastLocation ?: return
+
+            if (prefs.getBoolean("PENDING_HOME_ARRIVAL", false) && location.hasSpeed() && location.speed < 1.5f) {
+                Log.i(tag, "Speed dropped near zero inside geofence! Bypassing slow activity recognition.")
+                val editor = prefs.edit()
+                editor.putBoolean("IS_CURRENTLY_BIKING", false)
+                GlobalBikeTracker(context).stopLocationUpdates()
+                HomeArrivalWork.enqueue(context)
+                editor.putBoolean("AWAY_FROM_HOME", false)
+                      .putBoolean("PENDING_HOME_ARRIVAL", false)
+                      .apply()
+                return
+            }
             prefs.edit()
                 .putFloat("LAST_BIKE_LAT", location.latitude.toFloat())
                 .putFloat("LAST_BIKE_LNG", location.longitude.toFloat())
