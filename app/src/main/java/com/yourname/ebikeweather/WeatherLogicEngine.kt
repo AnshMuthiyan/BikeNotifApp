@@ -76,7 +76,7 @@ class WeatherLogicEngine {
                         val weatherType = if (tempC <= 0.0) "Snow" else "Rain"
                         val hoursUntil = ChronoUnit.HOURS.between(now, forecastTime).toInt()
 
-                        return WeatherAlert(
+                        val alert = WeatherAlert(
                             AlertLevel.IMMEDIATE_THREAT,
                             weatherType,
                             hoursUntil,
@@ -84,14 +84,48 @@ class WeatherLogicEngine {
                             probabilityPercent,
                             precipMmPerHour
                         )
+                        cacheAlert(prefs, alert)
+                        return alert
                     }
                 }
             }
-            return WeatherAlert(AlertLevel.ALL_CLEAR, "None", 0)
+            val clearAlert = WeatherAlert(AlertLevel.ALL_CLEAR, "None", 0)
+            cacheAlert(prefs, clearAlert)
+            return clearAlert
         } catch (e: Exception) {
             e.printStackTrace()
-            return WeatherAlert(AlertLevel.IMMEDIATE_THREAT, "Rain/Snow", 0)
+            return getCachedAlert(context)
         }
+    }
+
+    private fun cacheAlert(prefs: android.content.SharedPreferences, alert: WeatherAlert) {
+        prefs.edit()
+            .putString("CACHED_ALERT_LEVEL", alert.level.name)
+            .putString("CACHED_WEATHER_TYPE", alert.weatherType)
+            .putInt("CACHED_HOURS_UNTIL", alert.hoursUntil)
+            .putInt("CACHED_SEVERITY_SCORE", alert.rainSeverityScore)
+            .putInt("CACHED_PROBABILITY", alert.precipitationProbabilityPercent)
+            .putFloat("CACHED_PRECIP_MM", alert.precipitationMmPerHour.toFloat())
+            .putLong("CACHED_TIMESTAMP", System.currentTimeMillis())
+            .apply()
+    }
+
+    private fun getCachedAlert(context: Context): WeatherAlert {
+        val prefs = context.getSharedPreferences("EBikePrefs", Context.MODE_PRIVATE)
+        val ts = prefs.getLong("CACHED_TIMESTAMP", 0L)
+        // If cache is older than 6 hours, or doesn't exist, assume all clear
+        if (System.currentTimeMillis() - ts > 6 * 60 * 60 * 1000) {
+            return WeatherAlert(AlertLevel.ALL_CLEAR, "None", 0)
+        }
+        val levelStr = prefs.getString("CACHED_ALERT_LEVEL", AlertLevel.ALL_CLEAR.name) ?: AlertLevel.ALL_CLEAR.name
+        return WeatherAlert(
+            level = AlertLevel.valueOf(levelStr),
+            weatherType = prefs.getString("CACHED_WEATHER_TYPE", "None") ?: "None",
+            hoursUntil = prefs.getInt("CACHED_HOURS_UNTIL", 0),
+            rainSeverityScore = prefs.getInt("CACHED_SEVERITY_SCORE", 0),
+            precipitationProbabilityPercent = prefs.getInt("CACHED_PROBABILITY", 0),
+            precipitationMmPerHour = prefs.getFloat("CACHED_PRECIP_MM", 0f).toDouble()
+        )
     }
 
     fun classifyRainAmount(precipMmPerHour: Double): String {

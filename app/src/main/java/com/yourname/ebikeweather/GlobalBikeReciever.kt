@@ -94,6 +94,23 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                                 editor.putBoolean("IS_CURRENTLY_BIKING", true)
                                 tracker.startLocationUpdates()
                                 Log.i(tag, "Bike ride started. Enabled 20-second location tracking.")
+                                
+                                val pendingResult = goAsync()
+                                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                    try {
+                                        val engine = WeatherLogicEngine()
+                                        val lat = prefs.getFloat("HOME_LAT", 0f).toDouble()
+                                        val lng = prefs.getFloat("HOME_LNG", 0f).toDouble()
+                                        if (lat != 0.0 && lng != 0.0) {
+                                            engine.checkEbikeParkingConditions(context, lat, lng)
+                                            Log.i(tag, "Successfully pre-fetched home weather at start of ride.")
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e(tag, "Failed to pre-fetch weather.", e)
+                                    } finally {
+                                        pendingResult.finish()
+                                    }
+                                }
                             }
                         }
                         ActivityTransition.ACTIVITY_TRANSITION_EXIT -> {
