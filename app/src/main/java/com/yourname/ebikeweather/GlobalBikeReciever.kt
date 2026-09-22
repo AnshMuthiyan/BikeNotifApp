@@ -8,6 +8,7 @@ import com.google.android.gms.location.ActivityTransitionResult
 import com.google.android.gms.location.DetectedActivity
 import com.google.android.gms.location.LocationResult
 import android.util.Log
+import kotlinx.coroutines.launch
 
 class GlobalBikeReceiver : BroadcastReceiver() {
     private val tag = "GlobalBikeReceiver"
