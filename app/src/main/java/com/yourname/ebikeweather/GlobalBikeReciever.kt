@@ -28,7 +28,25 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                 val editor = prefs.edit()
                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
                 GlobalBikeTracker(context).stopLocationUpdates()
-                HomeArrivalWork.enqueue(context)
+                
+                // Instantly fetch weather and trigger notification!
+                val pendingResult = goAsync()
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    try {
+                        val engine = WeatherLogicEngine()
+                        val alert = engine.checkEbikeParkingConditions(context, location.latitude, location.longitude)
+                        if (alert.level != AlertLevel.ALL_CLEAR) {
+                            EBikeNotificationManager(context).showParkingNotification(alert)
+                        } else {
+                            EBikeNotificationManager(context).showAllClearNotification()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to check weather on home arrival.", e)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+
                 editor.putBoolean("AWAY_FROM_HOME", false)
                       .putBoolean("PENDING_HOME_ARRIVAL", false)
                       .remove("LAST_BIKE_LAT")
@@ -87,7 +105,25 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                                 Log.i(tag, "Bike ride ended. Disabled location tracking.")
 
                                 if (prefs.getBoolean("PENDING_HOME_ARRIVAL", false)) {
-                                    HomeArrivalWork.enqueue(context)
+                                    // Instantly fetch weather and trigger notification!
+                                    val pendingResult = goAsync()
+                                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                        try {
+                                            val engine = WeatherLogicEngine()
+                                            val lat = prefs.getFloat("HOME_LAT", 0f).toDouble()
+                                            val lng = prefs.getFloat("HOME_LNG", 0f).toDouble()
+                                            val alert = engine.checkEbikeParkingConditions(context, lat, lng)
+                                            if (alert.level != AlertLevel.ALL_CLEAR) {
+                                                EBikeNotificationManager(context).showParkingNotification(alert)
+                                            } else {
+                                                EBikeNotificationManager(context).showAllClearNotification()
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e(tag, "Failed to check weather on home arrival.", e)
+                                        } finally {
+                                            pendingResult.finish()
+                                        }
+                                    }
                                     editor
                                         .putBoolean("AWAY_FROM_HOME", false)
                                         .putBoolean("PENDING_HOME_ARRIVAL", false)
