@@ -47,6 +47,14 @@ class GlobalBikeTracker(private val context: Context) {
             ActivityTransition.Builder()
                 .setActivityType(DetectedActivity.ON_BICYCLE)
                 .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_EXIT)
+                .build(),
+            ActivityTransition.Builder()
+                .setActivityType(DetectedActivity.IN_VEHICLE)
+                .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
+                .build(),
+            ActivityTransition.Builder()
+                .setActivityType(DetectedActivity.IN_VEHICLE)
+                .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_EXIT)
                 .build()
         )
         val request = ActivityTransitionRequest(transitions)

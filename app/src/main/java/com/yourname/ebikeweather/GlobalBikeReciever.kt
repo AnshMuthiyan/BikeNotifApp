@@ -87,7 +87,7 @@ class GlobalBikeReceiver : BroadcastReceiver() {
             val tracker = GlobalBikeTracker(context)
 
             for (event in result.transitionEvents) {
-                if (event.activityType == DetectedActivity.ON_BICYCLE) {
+                if (event.activityType == DetectedActivity.ON_BICYCLE || event.activityType == DetectedActivity.IN_VEHICLE) {
                     when (event.transitionType) {
                         ActivityTransition.ACTIVITY_TRANSITION_ENTER -> {
                             val wasBiking = prefs.getBoolean("IS_CURRENTLY_BIKING", false)
