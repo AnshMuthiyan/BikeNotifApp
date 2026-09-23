@@ -24,7 +24,21 @@ class GlobalBikeReceiver : BroadcastReceiver() {
 
             val location = LocationResult.extractResult(intent)?.lastLocation ?: return
 
-            if (prefs.getBoolean("PENDING_HOME_ARRIVAL", false) && location.hasSpeed() && location.speed < 1.5f) {
+            val homeLat = prefs.getFloat("HOME_LAT", 0f)
+            val homeLng = prefs.getFloat("HOME_LNG", 0f)
+            var isNearHome = prefs.getBoolean("PENDING_HOME_ARRIVAL", false)
+
+            if (!isNearHome && homeLat != 0f && homeLng != 0f) {
+                val dist = FloatArray(1)
+                android.location.Location.distanceBetween(homeLat.toDouble(), homeLng.toDouble(), location.latitude, location.longitude, dist)
+                if (dist[0] <= 150f) { // Within 150 meters of home
+                    isNearHome = true
+                    prefs.edit().putBoolean("PENDING_HOME_ARRIVAL", true).apply()
+                    Log.i(tag, "Manual distance check triggered home arrival! Geofence may have been asleep.")
+                }
+            }
+
+            if (isNearHome && location.hasSpeed() && location.speed < 1.5f) {
                 Log.i(tag, "Speed dropped near zero inside geofence! Bypassing slow activity recognition.")
                 val editor = prefs.edit()
                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
@@ -122,7 +136,25 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                                 tracker.stopLocationUpdates()
                                 Log.i(tag, "Bike ride ended. Disabled location tracking.")
 
-                                if (prefs.getBoolean("PENDING_HOME_ARRIVAL", false)) {
+                                var isNearHome = prefs.getBoolean("PENDING_HOME_ARRIVAL", false)
+                                
+                                // Fallback manual distance check just in case geofence completely failed
+                                if (!isNearHome) {
+                                    val lastLat = prefs.getFloat("LAST_BIKE_LAT", 0f)
+                                    val lastLng = prefs.getFloat("LAST_BIKE_LNG", 0f)
+                                    val homeLat = prefs.getFloat("HOME_LAT", 0f)
+                                    val homeLng = prefs.getFloat("HOME_LNG", 0f)
+                                    
+                                    if (lastLat != 0f && lastLng != 0f && homeLat != 0f && homeLng != 0f) {
+                                        val dist = FloatArray(1)
+                                        android.location.Location.distanceBetween(homeLat.toDouble(), homeLng.toDouble(), lastLat.toDouble(), lastLng.toDouble(), dist)
+                                        if (dist[0] <= 250f) {
+                                            isNearHome = true
+                                        }
+                                    }
+                                }
+
+                                if (isNearHome) {
                                     // Instantly fetch weather and trigger notification!
                                     val pendingResult = goAsync()
                                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
