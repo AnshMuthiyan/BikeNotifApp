@@ -27,18 +27,49 @@ class GlobalBikeReceiver : BroadcastReceiver() {
             val homeLat = prefs.getFloat("HOME_LAT", 0f)
             val homeLng = prefs.getFloat("HOME_LNG", 0f)
             var isNearHome = prefs.getBoolean("PENDING_HOME_ARRIVAL", false)
+            var isHighFreq = prefs.getBoolean("HIGH_FREQ_GPS_ENABLED", false)
 
-            if (!isNearHome && homeLat != 0f && homeLng != 0f) {
-                val dist = FloatArray(1)
-                android.location.Location.distanceBetween(homeLat.toDouble(), homeLng.toDouble(), location.latitude, location.longitude, dist)
-                if (dist[0] <= 150f) { // Within 150 meters of home
+            var distanceMeters = 0f
+            val lastLat = prefs.getFloat("LAST_BIKE_LAT", 0f)
+            val lastLng = prefs.getFloat("LAST_BIKE_LNG", 0f)
+            val lastTs = prefs.getLong("LAST_BIKE_LOCATION_TS", 0L)
+            
+            if (lastLat != 0f && lastLng != 0f) {
+                val results = FloatArray(1)
+                android.location.Location.distanceBetween(lastLat.toDouble(), lastLng.toDouble(), location.latitude, location.longitude, results)
+                distanceMeters = results[0]
+            }
+
+            if (homeLat != 0f && homeLng != 0f) {
+                val distHome = FloatArray(1)
+                android.location.Location.distanceBetween(homeLat.toDouble(), homeLng.toDouble(), location.latitude, location.longitude, distHome)
+                
+                // 1/3 mile = 536 meters
+                if (distHome[0] <= 536f && !isHighFreq) {
+                    GlobalBikeTracker(context).startHighFrequencyLocationUpdates()
+                    prefs.edit().putBoolean("HIGH_FREQ_GPS_ENABLED", true).apply()
+                    Log.i(tag, "Within 1/3 mile of home. Upgraded to 5-second GPS checks.")
+                }
+
+                if (!isNearHome && distHome[0] <= 150f) { // Within 150 meters of home
                     isNearHome = true
                     prefs.edit().putBoolean("PENDING_HOME_ARRIVAL", true).apply()
                     Log.i(tag, "Manual distance check triggered home arrival! Geofence may have been asleep.")
                 }
             }
 
-            if (isNearHome && location.hasSpeed() && location.speed < 1.5f) {
+            var currentSpeed = if (location.hasSpeed()) location.speed else null
+            if (currentSpeed == null && lastTs > 0L) {
+                val timeDiffSeconds = (System.currentTimeMillis() - lastTs) / 1000f
+                if (timeDiffSeconds > 0) {
+                    currentSpeed = distanceMeters / timeDiffSeconds
+                }
+            }
+            
+            // Default to 99f so it doesn't trigger if it's the very first ping with no speed
+            val speedToEvaluate = currentSpeed ?: 99f
+
+            if (isNearHome && speedToEvaluate < 1.5f) {
                 Log.i(tag, "Speed dropped near zero inside geofence! Bypassing slow activity recognition.")
                 val editor = prefs.edit()
                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
@@ -64,20 +95,14 @@ class GlobalBikeReceiver : BroadcastReceiver() {
 
                 editor.putBoolean("AWAY_FROM_HOME", false)
                       .putBoolean("PENDING_HOME_ARRIVAL", false)
+                      .putBoolean("HIGH_FREQ_GPS_ENABLED", false)
                       .remove("LAST_BIKE_LAT")
                       .remove("LAST_BIKE_LNG")
                       .remove("LAST_BIKE_LOCATION_TS")
                       .apply()
                 return
             }
-            val lastLat = prefs.getFloat("LAST_BIKE_LAT", 0f)
-            val lastLng = prefs.getFloat("LAST_BIKE_LNG", 0f)
-
             if (lastLat != 0f && lastLng != 0f) {
-                val results = FloatArray(1)
-                android.location.Location.distanceBetween(lastLat.toDouble(), lastLng.toDouble(), location.latitude, location.longitude, results)
-                val distanceMeters = results[0]
-                
                 // Max speed of e-bike is ~20m/s. If 20 seconds passed, max distance is ~400m. 
                 // Ignore crazy GPS jumps (>1000m)
                 if (distanceMeters < 1000f) {
@@ -132,6 +157,7 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                             val wasBiking = prefs.getBoolean("IS_CURRENTLY_BIKING", false)
                             if (wasBiking) {
                                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
+                                editor.putBoolean("HIGH_FREQ_GPS_ENABLED", false)
                                 editor.remove("LAST_BIKE_LAT").remove("LAST_BIKE_LNG").remove("LAST_BIKE_LOCATION_TS")
                                 tracker.stopLocationUpdates()
                                 Log.i(tag, "Bike ride ended. Disabled location tracking.")
@@ -177,6 +203,7 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                                     editor
                                         .putBoolean("AWAY_FROM_HOME", false)
                                         .putBoolean("PENDING_HOME_ARRIVAL", false)
+                                        .putBoolean("HIGH_FREQ_GPS_ENABLED", false)
                                     Log.i(tag, "Completed home arrival after bike activity ended.")
                                 }
                             }

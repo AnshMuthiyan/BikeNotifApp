@@ -83,6 +83,22 @@ class GlobalBikeTracker(private val context: Context) {
             }
     }
 
+    @SuppressLint("MissingPermission")
+    fun startHighFrequencyLocationUpdates() {
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L)
+            .setMinUpdateIntervalMillis(5_000L)
+            .setWaitForAccurateLocation(false)
+            .build()
+
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationPendingIntent)
+            .addOnSuccessListener {
+                Log.i(tag, "5-second high frequency biking location updates started.")
+            }
+            .addOnFailureListener { e ->
+                Log.e(tag, "Failed to start high frequency biking location updates.", e)
+            }
+    }
+
     fun stopLocationUpdates() {
         fusedLocationClient.removeLocationUpdates(locationPendingIntent)
             .addOnSuccessListener {
