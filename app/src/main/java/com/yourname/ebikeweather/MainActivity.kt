@@ -90,6 +90,10 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Odometer Reset!", Toast.LENGTH_SHORT).show()
         }
 
+        findViewById<Button>(R.id.btnViewRide).setOnClickListener {
+            startActivity(Intent(this, RideDetailsActivity::class.java))
+        }
+
         tvCurrentLocation.text = "Home: ${prefs.getFloat("HOME_LAT", 0f)}, ${prefs.getFloat("HOME_LNG", 0f)}"
         etPrecipProb.setText(prefs.getInt("RAIN_SEVERITY_THRESHOLD", 55).toString())
 

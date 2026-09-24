@@ -38,6 +38,10 @@
             android:name=".RainScoreExplanationActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".RideDetailsActivity"
+            android:exported="false" />
+
         <!-- ========================================== -->
         <!-- 3. THE SPEED TRAP SERVICE                  -->
         <!-- ========================================== -->

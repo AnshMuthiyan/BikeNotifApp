@@ -69,7 +69,7 @@ class GlobalBikeReceiver : BroadcastReceiver() {
             // Default to 99f so it doesn't trigger if it's the very first ping with no speed
             val speedToEvaluate = currentSpeed ?: 99f
 
-            if (isNearHome && speedToEvaluate < 1.5f) {
+            if (isNearHome && speedToEvaluate < 1f) {
                 Log.i(tag, "Speed dropped near zero inside geofence! Bypassing slow activity recognition.")
                 val editor = prefs.edit()
                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
@@ -106,9 +106,12 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                 // Max speed of e-bike is ~20m/s. If 20 seconds passed, max distance is ~400m. 
                 // Ignore crazy GPS jumps (>1000m)
                 if (distanceMeters < 1000f) {
-                    val totalMeters = prefs.getFloat("TOTAL_BIKE_METERS", 0f) + distanceMeters
+                    val totalMeters = prefs.getFloat("TOTAL_BIKE_METERS", 2.5f) + distanceMeters
                     prefs.edit().putFloat("TOTAL_BIKE_METERS", totalMeters).apply()
+                    RideDataStore.addPoint(context, location.latitude, location.longitude, System.currentTimeMillis(), speedToEvaluate)
                 }
+            } else {
+                RideDataStore.addPoint(context, location.latitude, location.longitude, System.currentTimeMillis(), speedToEvaluate)
             }
 
             prefs.edit()
@@ -134,6 +137,7 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                                 editor.putBoolean("IS_CURRENTLY_BIKING", true)
                                 tracker.startLocationUpdates()
                                 Log.i(tag, "Bike ride started. Enabled 20-second location tracking.")
+                                RideDataStore.clearRide(context)
                                 
                                 val pendingResult = goAsync()
                                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
