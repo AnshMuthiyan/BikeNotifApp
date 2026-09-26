@@ -69,8 +69,8 @@ class GlobalBikeReceiver : BroadcastReceiver() {
             // Default to 99f so it doesn't trigger if it's the very first ping with no speed
             val speedToEvaluate = currentSpeed ?: 99f
 
-            if (isNearHome && speedToEvaluate < 1f) {
-                Log.i(tag, "Speed dropped near zero inside geofence! Bypassing slow activity recognition.")
+            if (isNearHome) {
+                Log.i(tag, "Arrived at home base! Bypassing slow activity recognition and speed trap.")
                 val editor = prefs.edit()
                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
                 GlobalBikeTracker(context).stopLocationUpdates()

@@ -47,3 +47,4 @@ object RideDataStore {
 }
 
 data class RidePoint(val lat: Double, val lng: Double, val ts: Long, val speed: Float)
+

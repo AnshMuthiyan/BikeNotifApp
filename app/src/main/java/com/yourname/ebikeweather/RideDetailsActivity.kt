@@ -95,3 +95,4 @@ class RideDetailsActivity : AppCompatActivity() {
         map.onPause()
     }
 }
+
