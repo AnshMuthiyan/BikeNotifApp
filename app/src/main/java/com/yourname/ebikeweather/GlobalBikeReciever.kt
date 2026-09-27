@@ -69,6 +69,25 @@ class GlobalBikeReceiver : BroadcastReceiver() {
             // Default to 99f so it doesn't trigger if it's the very first ping with no speed
             val speedToEvaluate = currentSpeed ?: 99f
 
+            // Car detection! If speed exceeds 16 m/s (36 mph), this is not an e-bike. Cancel ride!
+            if (currentSpeed != null && currentSpeed > 16f) {
+                Log.i(tag, "Speed of ${currentSpeed} m/s exceeded e-bike limits! This is a car. Canceling ride.")
+                val originalOdo = prefs.getFloat("ODOMETER_AT_RIDE_START", prefs.getFloat("TOTAL_BIKE_METERS", 0f))
+                prefs.edit()
+                    .putBoolean("IS_CURRENTLY_BIKING", false)
+                    .putBoolean("HIGH_FREQ_GPS_ENABLED", false)
+                    .putBoolean("AWAY_FROM_HOME", false)
+                    .putBoolean("PENDING_HOME_ARRIVAL", false)
+                    .putFloat("TOTAL_BIKE_METERS", originalOdo)
+                    .remove("LAST_BIKE_LAT")
+                    .remove("LAST_BIKE_LNG")
+                    .remove("LAST_BIKE_LOCATION_TS")
+                    .apply()
+                GlobalBikeTracker(context).stopLocationUpdates()
+                RideDataStore.clearRide(context)
+                return
+            }
+
             if (isNearHome) {
                 Log.i(tag, "Arrived at home base! Bypassing slow activity recognition and speed trap.")
                 val editor = prefs.edit()
@@ -134,6 +153,8 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                         ActivityTransition.ACTIVITY_TRANSITION_ENTER -> {
                             val wasBiking = prefs.getBoolean("IS_CURRENTLY_BIKING", false)
                             if (!wasBiking) {
+                                val currentOdo = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
+                                editor.putFloat("ODOMETER_AT_RIDE_START", currentOdo)
                                 editor.putBoolean("IS_CURRENTLY_BIKING", true)
                                 tracker.startLocationUpdates()
                                 Log.i(tag, "Bike ride started. Enabled 20-second location tracking.")
