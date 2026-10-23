@@ -100,4 +100,30 @@ class EBikeNotificationManager(private val context: Context) {
             }
         }
     }
+
+    fun showRechargeBatteryNotification(currentMiles: Float, avgMiles: Float) {
+        val title = "🔋 Time to Recharge Your E-Bike!"
+        val body = String.format(
+            "You've ridden %.1f miles since your last charge (your average between charges is %.1f miles). Remember to plug in your battery!",
+            currentMiles,
+            avgMiles
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+
+        with(NotificationManagerCompat.from(context)) {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                notify(1004, builder.build())
+            } else {
+                Log.e(tag, "Notification permission missing. Battery recharge alert was not displayed.")
+            }
+        }
+    }
 }

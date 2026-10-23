@@ -21,24 +21,18 @@ class GeofenceReceiver : BroadcastReceiver() {
         val prefs = context.getSharedPreferences("EBikePrefs", Context.MODE_PRIVATE)
         when (transition) {
             Geofence.GEOFENCE_TRANSITION_EXIT -> {
-                prefs.edit().putBoolean("AWAY_FROM_HOME", true).apply()
-                Log.i(tag, "Left home geofence.")
+                if (prefs.getBoolean("IS_CURRENTLY_BIKING", false)) {
+                    prefs.edit().putBoolean("AWAY_FROM_HOME", true).apply()
+                    Log.i(tag, "Left home geofence while biking.")
+                }
             }
             Geofence.GEOFENCE_TRANSITION_ENTER,
             Geofence.GEOFENCE_TRANSITION_DWELL -> {
-                if (!prefs.getBoolean("AWAY_FROM_HOME", false)) {
-                    return
-                }
-
-                if (prefs.getBoolean("IS_CURRENTLY_BIKING", false)) {
+                val isBiking = prefs.getBoolean("IS_CURRENTLY_BIKING", false)
+                val hasLeftHomeOnRide = prefs.getBoolean("HAS_LEFT_HOME_ON_RIDE", false)
+                if (isBiking && hasLeftHomeOnRide) {
                     prefs.edit().putBoolean("PENDING_HOME_ARRIVAL", true).apply()
-                    Log.i(tag, "Returned home while biking. Waiting for bike activity to end.")
-                } else {
-                    HomeArrivalWork.enqueue(context)
-                    prefs.edit()
-                        .putBoolean("AWAY_FROM_HOME", false)
-                        .putBoolean("PENDING_HOME_ARRIVAL", false)
-                        .apply()
+                    Log.i(tag, "Returned home while biking. Flagged pending home arrival.")
                 }
             }
         }

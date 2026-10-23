@@ -16,10 +16,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import java.util.concurrent.TimeUnit
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -73,21 +71,32 @@ class MainActivity : AppCompatActivity() {
         val etPrecipProb = findViewById<EditText>(R.id.etPrecipProb)
         val btnSaveSettings = findViewById<Button>(R.id.btnSaveSettings)
         val btnRainScoreExplanation = findViewById<Button>(R.id.btnRainScoreExplanation)
-        val tvOdometer = findViewById<TextView>(R.id.tvOdometer)
         val btnResetOdometer = findViewById<Button>(R.id.btnResetOdometer)
 
         btnRainScoreExplanation.setOnClickListener {
             startActivity(Intent(this, RainScoreExplanationActivity::class.java))
         }
 
-        val totalMeters = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
-        val totalMiles = totalMeters * 0.000621371f
-        tvOdometer.text = String.format("Distance since last charge: %.1f miles", totalMiles)
+        refreshBatteryAndOdometerUI()
 
         btnResetOdometer.setOnClickListener {
-            prefs.edit().putFloat("TOTAL_BIKE_METERS", 0f).apply()
-            tvOdometer.text = "Distance since last charge: 0.0 miles"
-            Toast.makeText(this, "Odometer Reset!", Toast.LENGTH_SHORT).show()
+            val currentMeters = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
+            val currentMiles = currentMeters * 0.000621371f
+            RideDataStore.recordChargeCycle(this, currentMeters)
+            prefs.edit()
+                .putFloat("TOTAL_BIKE_METERS", 0f)
+                .putBoolean("BATTERY_NOTIF_SENT_FOR_CYCLE", false)
+                .apply()
+            refreshBatteryAndOdometerUI()
+            if (currentMiles >= 0.5f) {
+                Toast.makeText(
+                    this,
+                    String.format(Locale.US, "Logged %.1f mi charge cycle & reset odometer!", currentMiles),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(this, "Odometer Reset!", Toast.LENGTH_SHORT).show()
+            }
         }
 
         findViewById<Button>(R.id.btnViewRide).setOnClickListener {
@@ -149,6 +158,42 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(this, "Set your Home location first!", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshBatteryAndOdometerUI()
+    }
+
+    private fun refreshBatteryAndOdometerUI() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val tvOdometer = findViewById<TextView>(R.id.tvOdometer)
+        val tvChargeAverage = findViewById<TextView>(R.id.tvChargeAverage)
+        val tvChargeHistory = findViewById<TextView>(R.id.tvChargeHistory)
+
+        val totalMeters = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
+        val totalMiles = totalMeters * 0.000621371f
+        tvOdometer.text = String.format(Locale.US, "Distance since last charge: %.1f miles", totalMiles)
+
+        val history = RideDataStore.getChargeHistory(this)
+        val avgMiles = RideDataStore.getAverageMilesBetweenCharges(this)
+
+        if (avgMiles != null && history.isNotEmpty()) {
+            val remaining = (avgMiles - totalMiles).coerceAtLeast(0f)
+            tvChargeAverage.text = String.format(
+                Locale.US,
+                "Avg between charges: %.1f mi (Est. %.1f mi left)",
+                avgMiles,
+                remaining
+            )
+            val recentFormatted = history.take(6).joinToString(", ") {
+                String.format(Locale.US, "%.1f mi", it.miles)
+            }
+            tvChargeHistory.text = "Past charges (${history.size}): $recentFormatted"
+        } else {
+            tvChargeAverage.text = "Avg between charges: Log your first charge to calculate"
+            tvChargeHistory.text = "Past charges: None recorded yet"
         }
     }
 

@@ -1,85 +1,131 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:fitsSystemWindows="true"
-    android:padding="24dp">
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="E-Bike Weather Settings"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="24dp"/>
-
-    <Button
-        android:id="@+id/btnSetHome"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Set Home to Current Location (100m Radius)" />
+        android:orientation="vertical"
+        android:padding="24dp">
 
-    <TextView
-        android:id="@+id/tvCurrentLocation"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Home Location: Not Set"
-        android:layout_marginBottom="24dp"/>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="E-Bike Weather &amp; Tracker"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="20dp" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Rain Severity Score Threshold (0-100)" />
+        <Button
+            android:id="@+id/btnSetHome"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Set Home to Current Location (150m Radius)" />
 
-    <EditText
-        android:id="@+id/etPrecipProb"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="number"
-        android:hint="e.g., 30" />
+        <TextView
+            android:id="@+id/tvCurrentLocation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Home Location: Not Set"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="20dp" />
 
-    <Button
-        android:id="@+id/btnSaveSettings"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="Save Parameters" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Rain Severity Score Threshold (10-100)" />
 
-    <Button
-        android:id="@+id/btnRainScoreExplanation"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="How the Rain Score Works" />
+        <EditText
+            android:id="@+id/etPrecipProb"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:hint="e.g., 55" />
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#CCCCCC"
-        android:layout_marginTop="24dp"
-        android:layout_marginBottom="12dp"/>
+        <Button
+            android:id="@+id/btnSaveSettings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Save Parameters" />
 
-    <TextView
-        android:id="@+id/tvOdometer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Distance since last charge: 0.0 miles"
-        android:textSize="16sp"
-        android:textStyle="bold" />
+        <Button
+            android:id="@+id/btnRainScoreExplanation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="How the Rain Score Works" />
 
-    <Button
-        android:id="@+id/btnResetOdometer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="I Just Charged My Bike (Reset)" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#66888888"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="16dp" />
 
-    <Button
-        android:id="@+id/btnViewRide"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="View Latest Ride Details" />
+        <!-- Battery & Odometer Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#1E293B"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
 
-</LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="BATTERY &amp; ODOMETER"
+                android:textColor="#38BDF8"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.08" />
+
+            <TextView
+                android:id="@+id/tvOdometer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Distance since last charge: 0.0 miles"
+                android:textColor="#F8FAFC"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvChargeAverage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Average between charges: -- miles"
+                android:textColor="#4ADE80"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvChargeHistory"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Past charges: None recorded yet"
+                android:textColor="#CBD5E1"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnResetOdometer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🔋 I Just Charged My Bike (Log &amp; Reset)" />
+
+        <Button
+            android:id="@+id/btnViewRide"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="🗺️ View Ride Map &amp; Past Rides" />
+
+    </LinearLayout>
+</ScrollView>

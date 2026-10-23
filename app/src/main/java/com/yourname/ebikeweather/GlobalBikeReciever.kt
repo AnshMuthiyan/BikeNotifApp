@@ -3,6 +3,7 @@ package com.anshmuthiyan.ebikeweather
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import com.google.android.gms.location.ActivityTransition
 import com.google.android.gms.location.ActivityTransitionResult
 import com.google.android.gms.location.DetectedActivity
@@ -23,60 +24,99 @@ class GlobalBikeReceiver : BroadcastReceiver() {
             }
 
             val location = LocationResult.extractResult(intent)?.lastLocation ?: return
+            val now = System.currentTimeMillis()
 
             val homeLat = prefs.getFloat("HOME_LAT", 0f)
             val homeLng = prefs.getFloat("HOME_LNG", 0f)
             var isNearHome = prefs.getBoolean("PENDING_HOME_ARRIVAL", false)
-            var isHighFreq = prefs.getBoolean("HIGH_FREQ_GPS_ENABLED", false)
+            val isHighFreq = prefs.getBoolean("HIGH_FREQ_GPS_ENABLED", false)
+            var hasLeftHomeOnRide = prefs.getBoolean("HAS_LEFT_HOME_ON_RIDE", false)
+            var awayPingCount = prefs.getInt("AWAY_PING_COUNT", 0)
 
             var distanceMeters = 0f
             val lastLat = prefs.getFloat("LAST_BIKE_LAT", 0f)
             val lastLng = prefs.getFloat("LAST_BIKE_LNG", 0f)
             val lastTs = prefs.getLong("LAST_BIKE_LOCATION_TS", 0L)
-            
+
             if (lastLat != 0f && lastLng != 0f) {
                 val results = FloatArray(1)
-                android.location.Location.distanceBetween(lastLat.toDouble(), lastLng.toDouble(), location.latitude, location.longitude, results)
+                android.location.Location.distanceBetween(
+                    lastLat.toDouble(),
+                    lastLng.toDouble(),
+                    location.latitude,
+                    location.longitude,
+                    results
+                )
                 distanceMeters = results[0]
             }
 
-            if (homeLat != 0f && homeLng != 0f) {
-                val distHome = FloatArray(1)
-                android.location.Location.distanceBetween(homeLat.toDouble(), homeLng.toDouble(), location.latitude, location.longitude, distHome)
-                
-                // 1/3 mile = 536 meters
-                if (distHome[0] <= 536f && !isHighFreq) {
-                    GlobalBikeTracker(context).startHighFrequencyLocationUpdates()
-                    prefs.edit().putBoolean("HIGH_FREQ_GPS_ENABLED", true).apply()
-                    Log.i(tag, "Within 1/3 mile of home. Upgraded to 5-second GPS checks.")
-                }
-
-                if (!isNearHome && distHome[0] <= 150f) { // Within 150 meters of home
-                    isNearHome = true
-                    prefs.edit().putBoolean("PENDING_HOME_ARRIVAL", true).apply()
-                    Log.i(tag, "Manual distance check triggered home arrival! Geofence may have been asleep.")
-                }
+            // Ignore extreme GPS teleport glitches (> 1000m in a single step)
+            if (lastLat != 0f && lastLng != 0f && distanceMeters >= 1000f) {
+                Log.w(tag, "Ignored GPS jump of $distanceMeters meters.")
+                return
             }
 
-            var currentSpeed = if (location.hasSpeed()) location.speed else null
-            if (currentSpeed == null && lastTs > 0L) {
-                val timeDiffSeconds = (System.currentTimeMillis() - lastTs) / 1000f
-                if (timeDiffSeconds > 0) {
-                    currentSpeed = distanceMeters / timeDiffSeconds
+            var currentSpeedMps: Float? = if (location.hasSpeed() && location.speed > 0f) location.speed else null
+            if (currentSpeedMps == null && lastTs > 0L) {
+                val timeDiffSeconds = (now - lastTs) / 1000f
+                if (timeDiffSeconds > 0f) {
+                    currentSpeedMps = distanceMeters / timeDiffSeconds
                 }
             }
-            
-            // Default to 99f so it doesn't trigger if it's the very first ping with no speed
-            val speedToEvaluate = currentSpeed ?: 99f
+            val speedForPoint = currentSpeedMps ?: 0f
 
-            // Car detection! If speed exceeds 16 m/s (36 mph), this is not an e-bike. Cancel ride!
-            if (currentSpeed != null && currentSpeed > 16f) {
-                Log.i(tag, "Speed of ${currentSpeed} m/s exceeded e-bike limits! This is a car. Canceling ride.")
-                val originalOdo = prefs.getFloat("ODOMETER_AT_RIDE_START", prefs.getFloat("TOTAL_BIKE_METERS", 0f))
+            // Record point and get cumulative ride statistics
+            val rideStats = RideDataStore.addPoint(
+                context,
+                location.latitude,
+                location.longitude,
+                now,
+                speedForPoint
+            )
+
+            // Update odometer for valid steps
+            val totalMeters = if (lastLat != 0f && lastLng != 0f) {
+                val updated = prefs.getFloat("TOTAL_BIKE_METERS", 0f) + distanceMeters
+                prefs.edit().putFloat("TOTAL_BIKE_METERS", updated).apply()
+                updated
+            } else {
+                prefs.getFloat("TOTAL_BIKE_METERS", 0f)
+            }
+
+            prefs.edit()
+                .putFloat("LAST_BIKE_LAT", location.latitude.toFloat())
+                .putFloat("LAST_BIKE_LNG", location.longitude.toFloat())
+                .putLong("LAST_BIKE_LOCATION_TS", now)
+                .apply()
+
+            // Car vs. Bike Detection using AVERAGE SPEED over the ride!
+            // Bike rides can hit 35+ mph on steep downhills, so we never cancel based on a single speed spike.
+            // Instead, once the ride has at least 4 points, >= 60s duration, and >= 500m distance,
+            // we check if the overall average speed exceeds 25 mph (11.18 m/s), or > 32 mph over >= 40s & 600m.
+            val isSustainedCarAverage = rideStats.pointCount >= 4 &&
+                rideStats.durationSeconds >= 60f &&
+                rideStats.totalDistanceMeters >= 500f &&
+                rideStats.avgSpeedMps > RideDataStore.MAX_EBIKE_AVG_SPEED_MPS
+
+            val isHighwayCarAverage = rideStats.pointCount >= 3 &&
+                rideStats.durationSeconds >= 40f &&
+                rideStats.totalDistanceMeters >= 600f &&
+                rideStats.avgSpeedMph > 32f
+
+            if (isSustainedCarAverage || isHighwayCarAverage) {
+                Log.i(
+                    tag,
+                    "Average speed of ${rideStats.avgSpeedMph} mph over ${rideStats.totalDistanceMeters}m exceeded e-bike average limits! Classifying as car ride."
+                )
+                val originalOdo = prefs.getFloat("ODOMETER_AT_RIDE_START", totalMeters)
                 prefs.edit()
                     .putBoolean("IS_CURRENTLY_BIKING", false)
+                    .putBoolean("IS_ON_BICYCLE_ACTIVE", false)
+                    .putBoolean("IS_IN_VEHICLE_ACTIVE", false)
                     .putBoolean("HIGH_FREQ_GPS_ENABLED", false)
                     .putBoolean("AWAY_FROM_HOME", false)
+                    .putBoolean("HAS_LEFT_HOME_ON_RIDE", false)
+                    .putInt("AWAY_PING_COUNT", 0)
                     .putBoolean("PENDING_HOME_ARRIVAL", false)
                     .putFloat("TOTAL_BIKE_METERS", originalOdo)
                     .remove("LAST_BIKE_LAT")
@@ -84,61 +124,81 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                     .remove("LAST_BIKE_LOCATION_TS")
                     .apply()
                 GlobalBikeTracker(context).stopLocationUpdates()
-                RideDataStore.clearRide(context)
+                RideDataStore.cancelCurrentRideAsCar(context)
                 return
             }
 
-            if (isNearHome) {
-                Log.i(tag, "Arrived at home base! Bypassing slow activity recognition and speed trap.")
-                val editor = prefs.edit()
-                editor.putBoolean("IS_CURRENTLY_BIKING", false)
-                GlobalBikeTracker(context).stopLocationUpdates()
-                
-                // Instantly fetch weather and trigger notification!
-                val pendingResult = goAsync()
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    try {
-                        val engine = WeatherLogicEngine()
-                        val alert = engine.checkEbikeParkingConditions(context, location.latitude, location.longitude)
-                        if (alert.level != AlertLevel.ALL_CLEAR) {
-                            EBikeNotificationManager(context).showParkingNotification(alert)
-                        } else {
-                            EBikeNotificationManager(context).showAllClearNotification()
-                        }
-                    } catch (e: Exception) {
-                        Log.e(tag, "Failed to check weather on home arrival.", e)
-                    } finally {
-                        pendingResult.finish()
+            // Evaluate distance to home
+            if (homeLat != 0f && homeLng != 0f) {
+                val distHome = FloatArray(1)
+                android.location.Location.distanceBetween(
+                    homeLat.toDouble(),
+                    homeLng.toDouble(),
+                    location.latitude,
+                    location.longitude,
+                    distHome
+                )
+
+                // Require at least 2 pings > 250m from home before marking that the user has left home.
+                // This prevents notifications from firing when leaving home or from indoor GPS drift while at home.
+                if (distHome[0] > 250f) {
+                    awayPingCount += 1
+                    val editor = prefs.edit().putInt("AWAY_PING_COUNT", awayPingCount)
+                    if (awayPingCount >= 2 && !hasLeftHomeOnRide) {
+                        hasLeftHomeOnRide = true
+                        editor.putBoolean("HAS_LEFT_HOME_ON_RIDE", true)
+                        editor.putBoolean("AWAY_FROM_HOME", true)
+                        Log.i(tag, "Confirmed rider is away from home (>250m for $awayPingCount pings).")
                     }
+                    editor.apply()
                 }
 
-                editor.putBoolean("AWAY_FROM_HOME", false)
-                      .putBoolean("PENDING_HOME_ARRIVAL", false)
-                      .putBoolean("HIGH_FREQ_GPS_ENABLED", false)
-                      .remove("LAST_BIKE_LAT")
-                      .remove("LAST_BIKE_LNG")
-                      .remove("LAST_BIKE_LOCATION_TS")
-                      .apply()
+                if (hasLeftHomeOnRide) {
+                    // 1/3 mile = 536 meters: switch to 5-second GPS only when returning toward home
+                    if (distHome[0] <= 536f && !isHighFreq) {
+                        GlobalBikeTracker(context).startHighFrequencyLocationUpdates()
+                        prefs.edit().putBoolean("HIGH_FREQ_GPS_ENABLED", true).apply()
+                        Log.i(tag, "Returning within 1/3 mile of home. Upgraded to 5-second GPS checks.")
+                    }
+
+                    // Trigger arrival only if rider actually left home AND rode at least 200m total
+                    if (!isNearHome && distHome[0] <= 150f && rideStats.totalDistanceMeters >= 200f) {
+                        isNearHome = true
+                        prefs.edit().putBoolean("PENDING_HOME_ARRIVAL", true).apply()
+                        Log.i(tag, "Arrived within 150m of home after a valid ride!")
+                    }
+                } else {
+                    // If we haven't left home yet, ignore any premature geofence flag
+                    isNearHome = false
+                }
+            }
+
+            checkBatteryNotificationIfNeeded(context, prefs, totalMeters)
+
+            if (isNearHome && hasLeftHomeOnRide && rideStats.totalDistanceMeters >= 200f) {
+                Log.i(tag, "Arrived at home base! Finalizing ride and checking weather.")
+                RideDataStore.finalizeCurrentRideIfValid(context)
+                GlobalBikeTracker(context).stopLocationUpdates()
+
+                prefs.edit()
+                    .putBoolean("IS_CURRENTLY_BIKING", false)
+                    .putBoolean("IS_ON_BICYCLE_ACTIVE", false)
+                    .putBoolean("IS_IN_VEHICLE_ACTIVE", false)
+                    .putBoolean("AWAY_FROM_HOME", false)
+                    .putBoolean("HAS_LEFT_HOME_ON_RIDE", false)
+                    .putInt("AWAY_PING_COUNT", 0)
+                    .putBoolean("PENDING_HOME_ARRIVAL", false)
+                    .putBoolean("HIGH_FREQ_GPS_ENABLED", false)
+                    .remove("LAST_BIKE_LAT")
+                    .remove("LAST_BIKE_LNG")
+                    .remove("LAST_BIKE_LOCATION_TS")
+                    .apply()
+
+                triggerHomeWeatherNotificationWithCooldown(context, prefs, location.latitude, location.longitude)
                 return
             }
-            if (lastLat != 0f && lastLng != 0f) {
-                // Max speed of e-bike is ~20m/s. If 20 seconds passed, max distance is ~400m. 
-                // Ignore crazy GPS jumps (>1000m)
-                if (distanceMeters < 1000f) {
-                    val totalMeters = prefs.getFloat("TOTAL_BIKE_METERS", 2.5f) + distanceMeters
-                    prefs.edit().putFloat("TOTAL_BIKE_METERS", totalMeters).apply()
-                    RideDataStore.addPoint(context, location.latitude, location.longitude, System.currentTimeMillis(), speedToEvaluate)
-                }
-            } else {
-                RideDataStore.addPoint(context, location.latitude, location.longitude, System.currentTimeMillis(), speedToEvaluate)
-            }
 
-            prefs.edit()
-                .putFloat("LAST_BIKE_LAT", location.latitude.toFloat())
-                .putFloat("LAST_BIKE_LNG", location.longitude.toFloat())
-                .putLong("LAST_BIKE_LOCATION_TS", System.currentTimeMillis())
-                .apply()
-            Log.d(tag, "Biking location update received.")
+            Log.d(tag, "Biking location update recorded. Ride dist=${rideStats.totalDistanceMeters}m, avg=${rideStats.avgSpeedMph}mph")
             return
         }
 
@@ -149,17 +209,35 @@ class GlobalBikeReceiver : BroadcastReceiver() {
 
             for (event in result.transitionEvents) {
                 if (event.activityType == DetectedActivity.ON_BICYCLE || event.activityType == DetectedActivity.IN_VEHICLE) {
+                    val isBicycleEvent = event.activityType == DetectedActivity.ON_BICYCLE
                     when (event.transitionType) {
                         ActivityTransition.ACTIVITY_TRANSITION_ENTER -> {
+                            if (isBicycleEvent) {
+                                editor.putBoolean("IS_ON_BICYCLE_ACTIVE", true)
+                            } else {
+                                editor.putBoolean("IS_IN_VEHICLE_ACTIVE", true)
+                            }
+
                             val wasBiking = prefs.getBoolean("IS_CURRENTLY_BIKING", false)
                             if (!wasBiking) {
-                                val currentOdo = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
-                                editor.putFloat("ODOMETER_AT_RIDE_START", currentOdo)
+                                val resumed = RideDataStore.startOrResumeRide(context)
+                                if (!resumed) {
+                                    val currentOdo = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
+                                    editor.putFloat("ODOMETER_AT_RIDE_START", currentOdo)
+                                    editor.putBoolean("HAS_LEFT_HOME_ON_RIDE", false)
+                                    editor.putInt("AWAY_PING_COUNT", 0)
+                                    editor.putBoolean("PENDING_HOME_ARRIVAL", false)
+                                    editor.remove("LAST_BIKE_LAT")
+                                    editor.remove("LAST_BIKE_LNG")
+                                    editor.remove("LAST_BIKE_LOCATION_TS")
+                                    Log.i(tag, "New bike ride started. Enabled 20-second location tracking.")
+                                } else {
+                                    Log.i(tag, "Resumed recent bike ride within 4-minute window.")
+                                }
+
                                 editor.putBoolean("IS_CURRENTLY_BIKING", true)
                                 tracker.startLocationUpdates()
-                                Log.i(tag, "Bike ride started. Enabled 20-second location tracking.")
-                                RideDataStore.clearRide(context)
-                                
+
                                 val pendingResult = goAsync()
                                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                                     try {
@@ -178,57 +256,81 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                                 }
                             }
                         }
+
                         ActivityTransition.ACTIVITY_TRANSITION_EXIT -> {
+                            var bikeActive = prefs.getBoolean("IS_ON_BICYCLE_ACTIVE", false)
+                            var vehicleActive = prefs.getBoolean("IS_IN_VEHICLE_ACTIVE", false)
+                            if (isBicycleEvent) {
+                                bikeActive = false
+                                editor.putBoolean("IS_ON_BICYCLE_ACTIVE", false)
+                            } else {
+                                vehicleActive = false
+                                editor.putBoolean("IS_IN_VEHICLE_ACTIVE", false)
+                            }
+
+                            // If the other activity type is still active (e.g. switched from ON_BICYCLE to IN_VEHICLE mid-ride), keep tracking!
+                            if (bikeActive || vehicleActive) {
+                                Log.i(tag, "One activity exited, but the other is still active. Continuing ride tracking.")
+                                continue
+                            }
+
                             val wasBiking = prefs.getBoolean("IS_CURRENTLY_BIKING", false)
                             if (wasBiking) {
+                                val rideStats = RideDataStore.getCurrentRideStats(context)
+                                val hasLeftHomeOnRide = prefs.getBoolean("HAS_LEFT_HOME_ON_RIDE", false)
+
+                                // Check if the completed ride was actually a car trip by average speed
+                                val isCar = rideStats.durationSeconds >= 60f &&
+                                    rideStats.totalDistanceMeters >= 500f &&
+                                    rideStats.avgSpeedMps > RideDataStore.MAX_EBIKE_AVG_SPEED_MPS
+
+                                if (isCar) {
+                                    val originalOdo = prefs.getFloat("ODOMETER_AT_RIDE_START", prefs.getFloat("TOTAL_BIKE_METERS", 0f))
+                                    editor.putFloat("TOTAL_BIKE_METERS", originalOdo)
+                                    RideDataStore.cancelCurrentRideAsCar(context)
+                                    Log.i(tag, "Ride ended with car average speed (${rideStats.avgSpeedMph} mph). Rolled back odometer.")
+                                } else {
+                                    RideDataStore.finalizeCurrentRideIfValid(context)
+                                    checkBatteryNotificationIfNeeded(context, prefs, prefs.getFloat("TOTAL_BIKE_METERS", 0f))
+                                }
+
+                                var isNearHome = prefs.getBoolean("PENDING_HOME_ARRIVAL", false)
+                                if (!isNearHome && hasLeftHomeOnRide) {
+                                    val lastLat = prefs.getFloat("LAST_BIKE_LAT", 0f)
+                                    val lastLng = prefs.getFloat("LAST_BIKE_LNG", 0f)
+                                    val homeLat = prefs.getFloat("HOME_LAT", 0f)
+                                    val homeLng = prefs.getFloat("HOME_LNG", 0f)
+
+                                    if (lastLat != 0f && lastLng != 0f && homeLat != 0f && homeLng != 0f) {
+                                        val dist = FloatArray(1)
+                                        android.location.Location.distanceBetween(
+                                            homeLat.toDouble(),
+                                            homeLng.toDouble(),
+                                            lastLat.toDouble(),
+                                            lastLng.toDouble(),
+                                            dist
+                                        )
+                                        if (dist[0] <= 200f) {
+                                            isNearHome = true
+                                        }
+                                    }
+                                }
+
                                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
                                 editor.putBoolean("HIGH_FREQ_GPS_ENABLED", false)
                                 editor.remove("LAST_BIKE_LAT").remove("LAST_BIKE_LNG").remove("LAST_BIKE_LOCATION_TS")
                                 tracker.stopLocationUpdates()
                                 Log.i(tag, "Bike ride ended. Disabled location tracking.")
 
-                                var isNearHome = prefs.getBoolean("PENDING_HOME_ARRIVAL", false)
-                                
-                                // Fallback manual distance check just in case geofence completely failed
-                                if (!isNearHome) {
-                                    val lastLat = prefs.getFloat("LAST_BIKE_LAT", 0f)
-                                    val lastLng = prefs.getFloat("LAST_BIKE_LNG", 0f)
-                                    val homeLat = prefs.getFloat("HOME_LAT", 0f)
-                                    val homeLng = prefs.getFloat("HOME_LNG", 0f)
-                                    
-                                    if (lastLat != 0f && lastLng != 0f && homeLat != 0f && homeLng != 0f) {
-                                        val dist = FloatArray(1)
-                                        android.location.Location.distanceBetween(homeLat.toDouble(), homeLng.toDouble(), lastLat.toDouble(), lastLng.toDouble(), dist)
-                                        if (dist[0] <= 250f) {
-                                            isNearHome = true
-                                        }
-                                    }
-                                }
-
-                                if (isNearHome) {
-                                    // Instantly fetch weather and trigger notification!
-                                    val pendingResult = goAsync()
-                                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                        try {
-                                            val engine = WeatherLogicEngine()
-                                            val lat = prefs.getFloat("HOME_LAT", 0f).toDouble()
-                                            val lng = prefs.getFloat("HOME_LNG", 0f).toDouble()
-                                            val alert = engine.checkEbikeParkingConditions(context, lat, lng)
-                                            if (alert.level != AlertLevel.ALL_CLEAR) {
-                                                EBikeNotificationManager(context).showParkingNotification(alert)
-                                            } else {
-                                                EBikeNotificationManager(context).showAllClearNotification()
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(tag, "Failed to check weather on home arrival.", e)
-                                        } finally {
-                                            pendingResult.finish()
-                                        }
-                                    }
+                                if (!isCar && isNearHome && hasLeftHomeOnRide && rideStats.totalDistanceMeters >= 200f) {
+                                    val lat = prefs.getFloat("HOME_LAT", 0f).toDouble()
+                                    val lng = prefs.getFloat("HOME_LNG", 0f).toDouble()
+                                    triggerHomeWeatherNotificationWithCooldown(context, prefs, lat, lng)
                                     editor
                                         .putBoolean("AWAY_FROM_HOME", false)
+                                        .putBoolean("HAS_LEFT_HOME_ON_RIDE", false)
+                                        .putInt("AWAY_PING_COUNT", 0)
                                         .putBoolean("PENDING_HOME_ARRIVAL", false)
-                                        .putBoolean("HIGH_FREQ_GPS_ENABLED", false)
                                     Log.i(tag, "Completed home arrival after bike activity ended.")
                                 }
                             }
@@ -240,4 +342,54 @@ class GlobalBikeReceiver : BroadcastReceiver() {
         }
     }
 
+    private fun triggerHomeWeatherNotificationWithCooldown(
+        context: Context,
+        prefs: SharedPreferences,
+        lat: Double,
+        lng: Double
+    ) {
+        val now = System.currentTimeMillis()
+        val lastNotifTs = prefs.getLong("LAST_WEATHER_NOTIF_TS", 0L)
+        if (now - lastNotifTs < 10 * 60 * 1000L) {
+            Log.i(tag, "Skipping weather notification; one was already sent within the last 10 minutes.")
+            return
+        }
+        prefs.edit().putLong("LAST_WEATHER_NOTIF_TS", now).apply()
+
+        val pendingResult = goAsync()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val engine = WeatherLogicEngine()
+                val alert = engine.checkEbikeParkingConditions(context, lat, lng)
+                if (alert.level != AlertLevel.ALL_CLEAR) {
+                    EBikeNotificationManager(context).showParkingNotification(alert)
+                } else {
+                    EBikeNotificationManager(context).showAllClearNotification()
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Failed to check weather on home arrival.", e)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
+    private fun checkBatteryNotificationIfNeeded(
+        context: Context,
+        prefs: SharedPreferences,
+        totalMeters: Float
+    ) {
+        val alreadyNotified = prefs.getBoolean("BATTERY_NOTIF_SENT_FOR_CYCLE", false)
+        if (alreadyNotified) return
+
+        val avgMiles = RideDataStore.getAverageMilesBetweenCharges(context) ?: return
+        if (avgMiles <= 0f) return
+
+        val currentMiles = totalMeters * 0.000621371f
+        // Notify when the rider reaches 90% of their historical average miles between charges
+        if (currentMiles >= avgMiles * 0.90f) {
+            prefs.edit().putBoolean("BATTERY_NOTIF_SENT_FOR_CYCLE", true).apply()
+            EBikeNotificationManager(context).showRechargeBatteryNotification(currentMiles, avgMiles)
+        }
+    }
 }
