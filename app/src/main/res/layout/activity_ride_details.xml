@@ -14,9 +14,91 @@
         android:background="#0F172A"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
-        android:paddingTop="14dp"
-        android:paddingBottom="14dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
         android:elevation="8dp">
+
+        <!-- All-Time Total Analytics Summary Bar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#172554"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:layout_marginBottom="10dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TOTAL ANALYTICS (ALL RIDES)"
+                android:textColor="#93C5FD"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.08" />
+
+            <TextView
+                android:id="@+id/tvTotalAnalyticsSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Total: 0.00 mi • 0 rides • Avg: 0.0 mph • Max: 0.0 mph"
+                android:textColor="#F8FAFC"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Uncertain Ride Confirmation Banner (Shown only when pendingConfirmation == true) -->
+        <LinearLayout
+            android:id="@+id/layoutConfirmBanner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#451A03"
+            android:padding="10dp"
+            android:layout_marginBottom="10dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🤔 Unsure: High speed &amp; duration. Was this a Bike Ride or a Car Drive?"
+                android:textColor="#FDE68A"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnBannerConfirmBike"
+                    android:layout_width="0dp"
+                    android:layout_height="38dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:backgroundTint="#166534"
+                    android:text="🚲 It's a Bike Ride"
+                    android:textAllCaps="false"
+                    android:textColor="#F8FAFC"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnBannerConfirmDrive"
+                    android:layout_width="0dp"
+                    android:layout_height="38dp"
+                    android:layout_weight="1"
+                    android:backgroundTint="#7F1D1D"
+                    android:text="🚗 Car Drive (Remove)"
+                    android:textAllCaps="false"
+                    android:textColor="#FECACA"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <!-- Header Row: Title, Ride Date, and Past Rides Picker Button -->
         <LinearLayout
@@ -48,7 +130,7 @@
                     android:layout_marginTop="2dp"
                     android:text="No rides recorded yet"
                     android:textColor="#F8FAFC"
-                    android:textSize="17sp"
+                    android:textSize="16sp"
                     android:textStyle="bold" />
             </LinearLayout>
 
@@ -69,7 +151,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="10dp"
             android:orientation="horizontal"
             android:weightSum="4">
 

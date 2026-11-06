@@ -7,7 +7,9 @@ import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
 import android.preference.PreferenceManager
+import android.view.View
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -26,6 +28,10 @@ import java.util.Locale
 class RideDetailsActivity : AppCompatActivity() {
 
     private lateinit var map: MapView
+    private lateinit var tvTotalAnalyticsSummary: TextView
+    private lateinit var layoutConfirmBanner: LinearLayout
+    private lateinit var btnBannerConfirmBike: Button
+    private lateinit var btnBannerConfirmDrive: Button
     private lateinit var tvRideHeaderTitle: TextView
     private lateinit var tvRideDate: TextView
     private lateinit var tvStatDistance: TextView
@@ -39,6 +45,7 @@ class RideDetailsActivity : AppCompatActivity() {
 
     private var rides: List<RideRecord> = emptyList()
     private var currentIndex: Int = 0
+    private var requestedRideId: Long = -1L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +56,12 @@ class RideDetailsActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_ride_details)
 
+        requestedRideId = intent?.getLongExtra(GlobalBikeReceiver.EXTRA_RIDE_ID, -1L) ?: -1L
+
+        tvTotalAnalyticsSummary = findViewById(R.id.tvTotalAnalyticsSummary)
+        layoutConfirmBanner = findViewById(R.id.layoutConfirmBanner)
+        btnBannerConfirmBike = findViewById(R.id.btnBannerConfirmBike)
+        btnBannerConfirmDrive = findViewById(R.id.btnBannerConfirmDrive)
         tvRideHeaderTitle = findViewById(R.id.tvRideHeaderTitle)
         tvRideDate = findViewById(R.id.tvRideDate)
         tvStatDistance = findViewById(R.id.tvStatDistance)
@@ -83,11 +96,35 @@ class RideDetailsActivity : AppCompatActivity() {
             showRidePickerDialog()
         }
 
+        btnBannerConfirmBike.setOnClickListener {
+            if (rides.isNotEmpty() && currentIndex in rides.indices) {
+                val target = rides[currentIndex]
+                RideDataStore.confirmRideAsBike(this, target.id)
+                EBikeNotificationManager(this).cancelConfirmationNotification()
+                Toast.makeText(this, "Confirmed as Bike Ride!", Toast.LENGTH_SHORT).show()
+                loadRides()
+            }
+        }
+
+        btnBannerConfirmDrive.setOnClickListener {
+            if (rides.isNotEmpty() && currentIndex in rides.indices) {
+                val target = rides[currentIndex]
+                RideDataStore.deleteRide(this, target.id)
+                EBikeNotificationManager(this).cancelConfirmationNotification()
+                Toast.makeText(this, "Removed car drive & updated total analytics!", Toast.LENGTH_SHORT).show()
+                loadRides()
+            }
+        }
+
         btnDeleteRide.setOnClickListener {
             if (rides.isNotEmpty() && currentIndex in rides.indices) {
                 val target = rides[currentIndex]
                 RideDataStore.deleteRide(this, target.id)
-                Toast.makeText(this, "Ride deleted.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    String.format(Locale.US, "Deleted %.2f mi ride & updated total analytics!", target.distanceMiles),
+                    Toast.LENGTH_SHORT
+                ).show()
                 loadRides()
             }
         }
@@ -97,16 +134,37 @@ class RideDetailsActivity : AppCompatActivity() {
 
     private fun loadRides() {
         rides = RideDataStore.getAllRides(this)
+        if (requestedRideId != -1L) {
+            val foundIdx = rides.indexOfFirst { it.id == requestedRideId }
+            if (foundIdx >= 0) {
+                currentIndex = foundIdx
+            }
+            requestedRideId = -1L
+        }
         if (currentIndex >= rides.size) {
             currentIndex = (rides.size - 1).coerceAtLeast(0)
         }
+        refreshTotalAnalyticsBar()
         displayCurrentRide()
+    }
+
+    private fun refreshTotalAnalyticsBar() {
+        val total = RideDataStore.getTotalAnalytics(this)
+        tvTotalAnalyticsSummary.text = String.format(
+            Locale.US,
+            "Total: %.2f mi (%d rides) • Avg: %.1f mph • Max: %.1f mph",
+            total.totalMiles,
+            total.totalRides,
+            total.overallAvgSpeedMph,
+            total.allTimeMaxSpeedMph
+        )
     }
 
     private fun displayCurrentRide() {
         btnPickRide.text = "All Rides (${rides.size})"
 
         if (rides.isEmpty()) {
+            layoutConfirmBanner.visibility = View.GONE
             tvRideHeaderTitle.text = "NO RIDES SAVED"
             tvRideDate.text = "Take your bike out for a spin!"
             tvStatDistance.text = "0.00 mi"
@@ -129,11 +187,14 @@ class RideDetailsActivity : AppCompatActivity() {
         }
 
         val ride = rides[currentIndex]
+        layoutConfirmBanner.visibility = if (ride.pendingConfirmation) View.VISIBLE else View.GONE
+
         val isLatest = currentIndex == 0
+        val statusSuffix = if (ride.pendingConfirmation) " • NEEDS CONFIRMATION" else ""
         tvRideHeaderTitle.text = if (isLatest) {
-            "LATEST RIDE (1 OF ${rides.size})"
+            "LATEST RIDE (1 OF ${rides.size})$statusSuffix"
         } else {
-            "PAST RIDE (${currentIndex + 1} OF ${rides.size})"
+            "PAST RIDE (${currentIndex + 1} OF ${rides.size})$statusSuffix"
         }
 
         val dateFmt = SimpleDateFormat("EEE, MMM d • h:mm a", Locale.getDefault())
@@ -226,7 +287,10 @@ class RideDetailsActivity : AppCompatActivity() {
         }
         val dateFmt = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
         val items = rides.mapIndexed { idx, r ->
-            val tag = if (idx == 0) " [Latest]" else ""
+            val tag = buildString {
+                if (idx == 0) append(" [Latest]")
+                if (r.pendingConfirmation) append(" [🤔 Bike or Drive?]")
+            }
             val mins = (r.durationSeconds / 60f).toInt()
             String.format(
                 Locale.US,

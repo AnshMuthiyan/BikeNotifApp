@@ -3,17 +3,24 @@ package com.anshmuthiyan.ebikeweather
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import java.util.Locale
 
 class EBikeNotificationManager(private val context: Context) {
     private val CHANNEL_ID = "EBIKE_WEATHER_ALERTS"
     private val tag = "EBikeNotificationMgr"
+
+    companion object {
+        const val NOTIF_ID_RIDE_CONFIRMATION = 1005
+    }
 
     init {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -104,6 +111,7 @@ class EBikeNotificationManager(private val context: Context) {
     fun showRechargeBatteryNotification(currentMiles: Float, avgMiles: Float) {
         val title = "🔋 Time to Recharge Your E-Bike!"
         val body = String.format(
+            Locale.US,
             "You've ridden %.1f miles since your last charge (your average between charges is %.1f miles). Remember to plug in your battery!",
             currentMiles,
             avgMiles
@@ -125,5 +133,74 @@ class EBikeNotificationManager(private val context: Context) {
                 Log.e(tag, "Notification permission missing. Battery recharge alert was not displayed.")
             }
         }
+    }
+
+    fun showRideOrDriveConfirmationNotification(ride: RideRecord) {
+        val title = "🤔 Was this a Bike Ride or a Drive?"
+        val body = String.format(
+            Locale.US,
+            "%.1f min trip (%.2f mi) had Avg %.1f mph & Max %.1f mph. Tap below to keep as a bike ride or remove as a car drive.",
+            ride.durationMinutes,
+            ride.distanceMiles,
+            ride.avgSpeedMph,
+            ride.maxSpeedMph
+        )
+
+        val bikeIntent = Intent(context, GlobalBikeReceiver::class.java).apply {
+            action = GlobalBikeReceiver.ACTION_CONFIRM_BIKE_RIDE
+            putExtra(GlobalBikeReceiver.EXTRA_RIDE_ID, ride.id)
+        }
+        val bikePendingIntent = PendingIntent.getBroadcast(
+            context,
+            (ride.id and 0x7FFFFFFF).toInt(),
+            bikeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val driveIntent = Intent(context, GlobalBikeReceiver::class.java).apply {
+            action = GlobalBikeReceiver.ACTION_CONFIRM_CAR_DRIVE
+            putExtra(GlobalBikeReceiver.EXTRA_RIDE_ID, ride.id)
+        }
+        val drivePendingIntent = PendingIntent.getBroadcast(
+            context,
+            ((ride.id + 1) and 0x7FFFFFFF).toInt(),
+            driveIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val openDetailsIntent = Intent(context, RideDetailsActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(GlobalBikeReceiver.EXTRA_RIDE_ID, ride.id)
+        }
+        val openDetailsPendingIntent = PendingIntent.getActivity(
+            context,
+            ((ride.id + 2) and 0x7FFFFFFF).toInt(),
+            openDetailsIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(openDetailsPendingIntent)
+            .setAutoCancel(true)
+            .addAction(android.R.drawable.ic_menu_directions, "🚲 Bike Ride", bikePendingIntent)
+            .addAction(android.R.drawable.ic_menu_delete, "🚗 Car Drive", drivePendingIntent)
+
+        with(NotificationManagerCompat.from(context)) {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                notify(NOTIF_ID_RIDE_CONFIRMATION, builder.build())
+            } else {
+                Log.e(tag, "Notification permission missing. Ride/Drive confirmation was not displayed.")
+            }
+        }
+    }
+
+    fun cancelConfirmationNotification() {
+        NotificationManagerCompat.from(context).cancel(NOTIF_ID_RIDE_CONFIRMATION)
     }
 }

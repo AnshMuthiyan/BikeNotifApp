@@ -20,23 +20,41 @@ data class RideRecord(
     val distanceMeters: Float,
     val maxSpeedMps: Float,
     val avgSpeedMps: Float,
-    val points: List<RidePoint>
+    val points: List<RidePoint>,
+    val pendingConfirmation: Boolean = false
 ) {
     val distanceMiles: Float get() = distanceMeters * 0.000621371f
     val durationSeconds: Float get() = max(0L, endTime - startTime) / 1000f
+    val durationMinutes: Float get() = durationSeconds / 60f
     val avgSpeedMph: Float get() = avgSpeedMps * 2.23694f
     val maxSpeedMph: Float get() = maxSpeedMps * 2.23694f
 }
 
 data class CurrentRideStats(
+    val id: Long,
     val pointCount: Int,
     val totalDistanceMeters: Float,
     val durationSeconds: Float,
     val avgSpeedMps: Float,
     val maxSpeedMps: Float
 ) {
+    val totalMiles: Float get() = totalDistanceMeters * 0.000621371f
+    val durationMinutes: Float get() = durationSeconds / 60f
     val avgSpeedMph: Float get() = avgSpeedMps * 2.23694f
     val maxSpeedMph: Float get() = maxSpeedMps * 2.23694f
+}
+
+data class TotalRideAnalytics(
+    val totalRides: Int,
+    val totalDistanceMeters: Float,
+    val totalDurationSeconds: Float,
+    val overallAvgSpeedMps: Float,
+    val allTimeMaxSpeedMps: Float
+) {
+    val totalMiles: Float get() = totalDistanceMeters * 0.000621371f
+    val totalMinutes: Float get() = totalDurationSeconds / 60f
+    val overallAvgSpeedMph: Float get() = overallAvgSpeedMps * 2.23694f
+    val allTimeMaxSpeedMph: Float get() = allTimeMaxSpeedMps * 2.23694f
 }
 
 data class ChargeRecord(
@@ -53,9 +71,25 @@ object RideDataStore {
     private const val RESUME_WINDOW_MS = 4 * 60 * 1000L // 4 minutes
 
     // Minimum distance (meters) before a ride is considered worth saving to history
-    private const val MIN_VALID_RIDE_DISTANCE_METERS = 80f
-    // Maximum average speed (m/s) for an e-bike ride (~25 mph = 11.18 m/s)
-    const val MAX_EBIKE_AVG_SPEED_MPS = 11.18f
+    const val MIN_VALID_RIDE_DISTANCE_METERS = 80f
+
+    /**
+     * Checks whether a ride's speed and duration make it ambiguous between a bike ride and a car drive.
+     * User rule:
+     * - If avg speed > 15 mph OR max speed > 25 mph, check how long the ride was:
+     *   if it was longer than 10 minutes, ask if it was a drive or a bike ride.
+     * - Also if a shorter ride (< 10 min) has extreme speed (avg > 22 mph or max > 37 mph), ask as well.
+     */
+    fun isRideUncertain(stats: CurrentRideStats): Boolean {
+        val speedSuspicious = stats.avgSpeedMph > 15.0f || stats.maxSpeedMph > 25.0f
+        if (speedSuspicious && stats.durationMinutes >= 10.0f) {
+            return true
+        }
+        if (stats.durationMinutes < 10.0f && (stats.avgSpeedMph > 22.0f || stats.maxSpeedMph > 37.0f)) {
+            return true
+        }
+        return false
+    }
 
     /**
      * Called when an activity transition ENTER occurs.
@@ -84,19 +118,6 @@ object RideDataStore {
         }
     }
 
-    /**
-     * Cancels the current in-progress ride because it was detected as a car trip.
-     * Removes only the current ride's ID from ride_history.json, keeping all past bike rides intact.
-     */
-    fun cancelCurrentRideAsCar(context: Context) {
-        val currentPoints = getCurrentRidePoints(context)
-        val currentId = currentPoints.firstOrNull()?.ts
-        clearCurrentRideBuffer(context)
-        if (currentId != null) {
-            deleteRide(context, currentId)
-        }
-    }
-
     fun addPoint(context: Context, lat: Double, lng: Double, ts: Long, speedMps: Float): CurrentRideStats {
         migrateLegacyRideIfNeeded(context)
         val file = File(context.filesDir, CURRENT_RIDE_FILE)
@@ -106,7 +127,7 @@ object RideDataStore {
             JSONArray()
         }
 
-        val cleanSpeed = if (speedMps.isNaN() || speedMps.isInfinite() || speedMps < 0f || speedMps > 45f) 0f else speedMps
+        val cleanSpeed = if (speedMps.isNaN() || speedMps.isInfinite() || speedMps < 0f || speedMps > 60f) 0f else speedMps
         val obj = JSONObject().apply {
             put("lat", lat)
             put("lng", lng)
@@ -119,47 +140,112 @@ object RideDataStore {
         val points = parsePointsArray(array)
         val stats = computeStats(points)
 
-        // Live-upsert into ride history if it has at least 2 points, >= 80m distance, and bike-like average speed
+        // Live-upsert into ride history if it has at least 2 points and >= 80m distance
         if (points.size >= 2 && stats.totalDistanceMeters >= MIN_VALID_RIDE_DISTANCE_METERS) {
-            val isLikelyCar = stats.durationSeconds >= 60f && stats.totalDistanceMeters >= 500f && stats.avgSpeedMps > MAX_EBIKE_AVG_SPEED_MPS
-            if (!isLikelyCar) {
-                val record = RideRecord(
-                    id = points.first().ts,
-                    startTime = points.first().ts,
-                    endTime = points.last().ts,
-                    distanceMeters = stats.totalDistanceMeters,
-                    maxSpeedMps = stats.maxSpeedMps,
-                    avgSpeedMps = stats.avgSpeedMps,
-                    points = points
-                )
-                upsertRideInHistory(context, record)
-            }
+            val uncertain = isRideUncertain(stats)
+            val record = RideRecord(
+                id = points.first().ts,
+                startTime = points.first().ts,
+                endTime = points.last().ts,
+                distanceMeters = stats.totalDistanceMeters,
+                maxSpeedMps = stats.maxSpeedMps,
+                avgSpeedMps = stats.avgSpeedMps,
+                points = points,
+                pendingConfirmation = uncertain
+            )
+            upsertRideInHistory(context, record)
         }
 
         return stats
     }
 
-    fun finalizeCurrentRideIfValid(context: Context) {
+    /**
+     * Finalizes the current ride buffer into history and returns the finalized RideRecord (if valid).
+     */
+    fun finalizeCurrentRideIfValid(context: Context): RideRecord? {
         val points = getCurrentRidePoints(context)
+        var finalizedRecord: RideRecord? = null
         if (points.size >= 2) {
             val stats = computeStats(points)
-            val isCar = stats.durationSeconds >= 60f && stats.totalDistanceMeters >= 500f && stats.avgSpeedMps > MAX_EBIKE_AVG_SPEED_MPS
-            if (!isCar && stats.totalDistanceMeters >= MIN_VALID_RIDE_DISTANCE_METERS) {
-                val record = RideRecord(
+            if (stats.totalDistanceMeters >= MIN_VALID_RIDE_DISTANCE_METERS) {
+                val uncertain = isRideUncertain(stats)
+                finalizedRecord = RideRecord(
                     id = points.first().ts,
                     startTime = points.first().ts,
                     endTime = points.last().ts,
                     distanceMeters = stats.totalDistanceMeters,
                     maxSpeedMps = stats.maxSpeedMps,
                     avgSpeedMps = stats.avgSpeedMps,
-                    points = points
+                    points = points,
+                    pendingConfirmation = uncertain
                 )
-                upsertRideInHistory(context, record)
-            } else if (isCar) {
-                deleteRide(context, points.first().ts)
+                upsertRideInHistory(context, finalizedRecord)
             }
         }
         clearCurrentRideBuffer(context)
+        return finalizedRecord
+    }
+
+    fun confirmRideAsBike(context: Context, rideId: Long) {
+        val file = File(context.filesDir, RIDE_HISTORY_FILE)
+        if (!file.exists()) return
+        try {
+            val array = JSONArray(file.readText())
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                if (obj.optLong("id") == rideId) {
+                    obj.put("pendingConfirmation", false)
+                }
+            }
+            file.writeText(array.toString())
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
+    /**
+     * Deletes a ride from history (and current buffer if matching), AND subtracts its distance
+     * from the battery odometer (TOTAL_BIKE_METERS) if the ride occurred since the last battery charge reset.
+     */
+    fun deleteRide(context: Context, rideId: Long): RideRecord? {
+        val allRides = getAllRides(context)
+        val targetRide = allRides.find { it.id == rideId }
+
+        // If current_ride.json matches this rideId, clear it too
+        val currentPts = getCurrentRidePoints(context)
+        if (currentPts.isNotEmpty() && currentPts.first().ts == rideId) {
+            clearCurrentRideBuffer(context)
+        }
+
+        val file = File(context.filesDir, RIDE_HISTORY_FILE)
+        if (file.exists()) {
+            try {
+                val array = JSONArray(file.readText())
+                val updated = JSONArray()
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    if (obj.optLong("id") != rideId) {
+                        updated.put(obj)
+                    }
+                }
+                file.writeText(updated.toString())
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+
+        // Subtract deleted ride's distance from TOTAL_BIKE_METERS if it occurred after the last charge reset
+        if (targetRide != null) {
+            val prefs = context.getSharedPreferences("EBikePrefs", Context.MODE_PRIVATE)
+            val lastChargeResetTs = prefs.getLong("LAST_CHARGE_RESET_TS", 0L)
+            if (targetRide.endTime >= lastChargeResetTs) {
+                val currentMeters = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
+                val newMeters = (currentMeters - targetRide.distanceMeters).coerceAtLeast(0f)
+                prefs.edit().putFloat("TOTAL_BIKE_METERS", newMeters).apply()
+            }
+        }
+
+        return targetRide
     }
 
     fun getCurrentRidePoints(context: Context): List<RidePoint> {
@@ -195,7 +281,8 @@ object RideDataStore {
                                 distanceMeters = obj.optDouble("distanceMeters", 0.0).toFloat(),
                                 maxSpeedMps = obj.optDouble("maxSpeedMps", 0.0).toFloat(),
                                 avgSpeedMps = obj.optDouble("avgSpeedMps", 0.0).toFloat(),
-                                points = pts
+                                points = pts,
+                                pendingConfirmation = obj.optBoolean("pendingConfirmation", false)
                             )
                         )
                     }
@@ -220,7 +307,8 @@ object RideDataStore {
                             distanceMeters = stats.totalDistanceMeters,
                             maxSpeedMps = stats.maxSpeedMps,
                             avgSpeedMps = stats.avgSpeedMps,
-                            points = currentPts
+                            points = currentPts,
+                            pendingConfirmation = isRideUncertain(stats)
                         )
                     )
                 }
@@ -230,22 +318,35 @@ object RideDataStore {
         return historyList.sortedByDescending { it.startTime }
     }
 
-    fun deleteRide(context: Context, rideId: Long) {
-        val file = File(context.filesDir, RIDE_HISTORY_FILE)
-        if (!file.exists()) return
-        try {
-            val array = JSONArray(file.readText())
-            val updated = JSONArray()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                if (obj.optLong("id") != rideId) {
-                    updated.put(obj)
-                }
-            }
-            file.writeText(updated.toString())
-        } catch (e: Exception) {
-            // Ignore
+    /**
+     * Computes aggregate analytics across all saved rides.
+     * Automatically reflects any ride deletions or drive removals.
+     */
+    fun getTotalAnalytics(context: Context): TotalRideAnalytics {
+        val rides = getAllRides(context)
+        if (rides.isEmpty()) {
+            return TotalRideAnalytics(0, 0f, 0f, 0f, 0f)
         }
+        var totalDistMeters = 0f
+        var totalDurSeconds = 0f
+        var maxSpeedMps = 0f
+
+        for (r in rides) {
+            totalDistMeters += r.distanceMeters
+            totalDurSeconds += r.durationSeconds
+            if (r.maxSpeedMps > maxSpeedMps) {
+                maxSpeedMps = r.maxSpeedMps
+            }
+        }
+
+        val overallAvgMps = if (totalDurSeconds > 0f) totalDistMeters / totalDurSeconds else 0f
+        return TotalRideAnalytics(
+            totalRides = rides.size,
+            totalDistanceMeters = totalDistMeters,
+            totalDurationSeconds = totalDurSeconds,
+            overallAvgSpeedMps = overallAvgMps,
+            allTimeMaxSpeedMps = maxSpeedMps
+        )
     }
 
     private fun upsertRideInHistory(context: Context, record: RideRecord) {
@@ -282,6 +383,7 @@ object RideDataStore {
             put("distanceMeters", record.distanceMeters.toDouble())
             put("maxSpeedMps", record.maxSpeedMps.toDouble())
             put("avgSpeedMps", record.avgSpeedMps.toDouble())
+            put("pendingConfirmation", record.pendingConfirmation)
             put("points", ptsArray)
         }
         existing.add(0, recordObj)
@@ -309,7 +411,8 @@ object RideDataStore {
                         distanceMeters = stats.totalDistanceMeters,
                         maxSpeedMps = stats.maxSpeedMps,
                         avgSpeedMps = stats.avgSpeedMps,
-                        points = pts
+                        points = pts,
+                        pendingConfirmation = isRideUncertain(stats)
                     )
                     upsertRideInHistory(context, record)
                 }
@@ -327,7 +430,7 @@ object RideDataStore {
             val obj = array.getJSONObject(i)
             val rawSpeed = obj.optDouble("speed", 0.0).toFloat()
             // Filter out legacy 99f default speed bug if present
-            val cleanSpeed = if (rawSpeed > 45f || rawSpeed < 0f || rawSpeed.isNaN()) 0f else rawSpeed
+            val cleanSpeed = if (rawSpeed > 60f || rawSpeed < 0f || rawSpeed.isNaN()) 0f else rawSpeed
             list.add(
                 RidePoint(
                     lat = obj.getDouble("lat"),
@@ -342,13 +445,13 @@ object RideDataStore {
 
     private fun computeStats(points: List<RidePoint>): CurrentRideStats {
         if (points.isEmpty()) {
-            return CurrentRideStats(0, 0f, 0f, 0f, 0f)
+            return CurrentRideStats(0L, 0, 0f, 0f, 0f, 0f)
         }
         var totalDistanceMeters = 0f
         var maxSpeedMps = 0f
         for (i in points.indices) {
             val p = points[i]
-            if (p.speed > maxSpeedMps && p.speed <= 40f) {
+            if (p.speed > maxSpeedMps && p.speed <= 55f) {
                 maxSpeedMps = p.speed
             }
             if (i > 0) {
@@ -361,7 +464,7 @@ object RideDataStore {
                     val dt = (p.ts - prev.ts) / 1000f
                     if (dt > 0f && p.speed == 0f) {
                         val segSpeed = segmentDist / dt
-                        if (segSpeed > maxSpeedMps && segSpeed <= 40f) {
+                        if (segSpeed > maxSpeedMps && segSpeed <= 55f) {
                             maxSpeedMps = segSpeed
                         }
                     }
@@ -371,6 +474,7 @@ object RideDataStore {
         val durationSeconds = max(0L, points.last().ts - points.first().ts) / 1000f
         val avgSpeedMps = if (durationSeconds > 0f) totalDistanceMeters / durationSeconds else 0f
         return CurrentRideStats(
+            id = points.first().ts,
             pointCount = points.size,
             totalDistanceMeters = totalDistanceMeters,
             durationSeconds = durationSeconds,

@@ -85,6 +85,7 @@ class MainActivity : AppCompatActivity() {
             RideDataStore.recordChargeCycle(this, currentMeters)
             prefs.edit()
                 .putFloat("TOTAL_BIKE_METERS", 0f)
+                .putLong("LAST_CHARGE_RESET_TS", System.currentTimeMillis())
                 .putBoolean("BATTERY_NOTIF_SENT_FOR_CYCLE", false)
                 .apply()
             refreshBatteryAndOdometerUI()
@@ -171,6 +172,7 @@ class MainActivity : AppCompatActivity() {
         val tvOdometer = findViewById<TextView>(R.id.tvOdometer)
         val tvChargeAverage = findViewById<TextView>(R.id.tvChargeAverage)
         val tvChargeHistory = findViewById<TextView>(R.id.tvChargeHistory)
+        val tvAllTimeAnalytics = findViewById<TextView>(R.id.tvAllTimeAnalytics)
 
         val totalMeters = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
         val totalMiles = totalMeters * 0.000621371f
@@ -195,6 +197,16 @@ class MainActivity : AppCompatActivity() {
             tvChargeAverage.text = "Avg between charges: Log your first charge to calculate"
             tvChargeHistory.text = "Past charges: None recorded yet"
         }
+
+        val analytics = RideDataStore.getTotalAnalytics(this)
+        tvAllTimeAnalytics.text = String.format(
+            Locale.US,
+            "All-Time Total: %.2f mi (%d rides) • Avg: %.1f mph • Max: %.1f mph",
+            analytics.totalMiles,
+            analytics.totalRides,
+            analytics.overallAvgSpeedMph,
+            analytics.allTimeMaxSpeedMph
+        )
     }
 
     private fun checkBasicPermissions() {

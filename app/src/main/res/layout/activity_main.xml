@@ -66,7 +66,7 @@
             android:layout_marginTop="20dp"
             android:layout_marginBottom="16dp" />
 
-        <!-- Battery & Odometer Card -->
+        <!-- Battery, Odometer & Total Analytics Card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -78,7 +78,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="BATTERY &amp; ODOMETER"
+                android:text="BATTERY, ODOMETER &amp; TOTAL ANALYTICS"
                 android:textColor="#38BDF8"
                 android:textSize="12sp"
                 android:textStyle="bold"
@@ -112,6 +112,22 @@
                 android:text="Past charges: None recorded yet"
                 android:textColor="#CBD5E1"
                 android:textSize="13sp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#334155"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/tvAllTimeAnalytics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="All-Time Total: 0.00 mi (0 rides) • Avg: 0.0 mph • Max: 0.0 mph"
+                android:textColor="#93C5FD"
+                android:textSize="13sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <Button
