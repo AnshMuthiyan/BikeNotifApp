@@ -32,7 +32,6 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                 EBikeNotificationManager(context).cancelConfirmationNotification()
                 Toast.makeText(context, "Confirmed as Bike Ride!", Toast.LENGTH_SHORT).show()
 
-                // If this ride ended at home, check battery & weather now that user confirmed it was a bike ride
                 checkBatteryNotificationIfNeeded(context, prefs, prefs.getFloat("TOTAL_BIKE_METERS", 0f))
                 val pendingWeatherRideId = prefs.getLong("PENDING_WEATHER_ON_CONFIRM_RIDE_ID", -1L)
                 if (pendingWeatherRideId == rideId) {
@@ -142,6 +141,43 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                 .putLong("LAST_MOVING_TS", lastMovingTs)
                 .apply()
 
+            // Mid-ride Car Detection:
+            // If the ride is already > 10 minutes AND has avgSpeed > 15 mph or maxSpeed > 25 mph (2+ measures),
+            // OR has clear highway car speeds (avg > 24 mph & max > 36 mph after >= 2 minutes),
+            // immediately assume it's a car ride, roll back the odometer, and stop tracking.
+            val isLongRideCar = rideStats.durationMinutes > 10.0f &&
+                RideDataStore.classifyRide(rideStats) == RideClassification.CAR_DRIVE
+            val isFastCar = rideStats.durationMinutes >= 2.0f &&
+                rideStats.avgSpeedMph > 24.0f &&
+                rideStats.maxSpeedMph > 36.0f
+
+            if (isLongRideCar || isFastCar) {
+                Log.i(
+                    tag,
+                    "2+ car measures met mid-ride (time=${rideStats.durationMinutes}m, avg=${rideStats.avgSpeedMph}mph, max=${rideStats.maxSpeedMph}mph). Assuming car ride & rolling back odometer."
+                )
+                val fallbackOdo = (totalMeters - rideStats.totalDistanceMeters).coerceAtLeast(0f)
+                val originalOdo = prefs.getFloat("ODOMETER_AT_RIDE_START", fallbackOdo)
+                prefs.edit()
+                    .putBoolean("IS_CURRENTLY_BIKING", false)
+                    .putBoolean("IS_ON_BICYCLE_ACTIVE", false)
+                    .putBoolean("IS_IN_VEHICLE_ACTIVE", false)
+                    .putBoolean("HIGH_FREQ_GPS_ENABLED", false)
+                    .putBoolean("AWAY_FROM_HOME", false)
+                    .putBoolean("HAS_LEFT_HOME_ON_RIDE", false)
+                    .putInt("AWAY_PING_COUNT", 0)
+                    .putBoolean("PENDING_HOME_ARRIVAL", false)
+                    .putFloat("TOTAL_BIKE_METERS", originalOdo)
+                    .remove("LAST_BIKE_LAT")
+                    .remove("LAST_BIKE_LNG")
+                    .remove("LAST_BIKE_LOCATION_TS")
+                    .remove("LAST_MOVING_TS")
+                    .apply()
+                GlobalBikeTracker(context).stopLocationUpdates()
+                RideDataStore.cancelCurrentRideAsCar(context)
+                return
+            }
+
             // Evaluate distance to home
             if (homeLat != 0f && homeLng != 0f) {
                 val distHome = FloatArray(1)
@@ -190,7 +226,8 @@ class GlobalBikeReceiver : BroadcastReceiver() {
             val arrivedAtHome = isNearHome && hasLeftHomeOnRide && rideStats.totalDistanceMeters >= 200f
 
             if (arrivedAtHome || stoppedAfterTrip) {
-                Log.i(tag, "Trip ended (arrivedAtHome=$arrivedAtHome, stoppedAfterTrip=$stoppedAfterTrip). Evaluating ride vs drive.")
+                Log.i(tag, "Trip ended (arrivedAtHome=$arrivedAtHome, stoppedAfterTrip=$stoppedAfterTrip). Evaluating 2-of-3 ride vs drive rule.")
+                // finalizeCurrentRideIfValid returns null and rolls back odometer if 2+ measures indicate a CAR_DRIVE
                 val finalizedRide = RideDataStore.finalizeCurrentRideIfValid(context)
                 GlobalBikeTracker(context).stopLocationUpdates()
 
@@ -216,7 +253,7 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                         }
                         EBikeNotificationManager(context).showRideOrDriveConfirmationNotification(finalizedRide)
                     } else {
-                        checkBatteryNotificationIfNeeded(context, prefs, totalMeters)
+                        checkBatteryNotificationIfNeeded(context, prefs, prefs.getFloat("TOTAL_BIKE_METERS", 0f))
                         if (arrivedAtHome) {
                             triggerHomeWeatherNotificationWithCooldown(context, prefs, location.latitude, location.longitude)
                         }
@@ -329,6 +366,7 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                                     }
                                 }
 
+                                // finalizeCurrentRideIfValid returns null and rolls back odometer if 2+ measures indicate CAR_DRIVE
                                 val finalizedRide = RideDataStore.finalizeCurrentRideIfValid(context)
 
                                 editor.putBoolean("IS_CURRENTLY_BIKING", false)
@@ -347,13 +385,13 @@ class GlobalBikeReceiver : BroadcastReceiver() {
                                             editor.putLong("PENDING_WEATHER_ON_CONFIRM_RIDE_ID", finalizedRide.id)
                                         }
                                         EBikeNotificationManager(context).showRideOrDriveConfirmationNotification(finalizedRide)
-                                        Log.i(tag, "Sent Ride vs Drive confirmation notification for uncertain ride.")
+                                        Log.i(tag, "Sent Ride vs Drive confirmation notification for 1-flag uncertain ride.")
                                     } else {
                                         checkBatteryNotificationIfNeeded(context, prefs, prefs.getFloat("TOTAL_BIKE_METERS", 0f))
                                         if (arrivedHomeValid) {
-                                            val lat = prefs.getFloat("HOME_LAT", 0f).toDouble()
-                                            val lng = prefs.getFloat("HOME_LNG", 0f).toDouble()
-                                            triggerHomeWeatherNotificationWithCooldown(context, prefs, lat, lng)
+                            val lat = prefs.getFloat("HOME_LAT", 0f).toDouble()
+                            val lng = prefs.getFloat("HOME_LNG", 0f).toDouble()
+                            triggerHomeWeatherNotificationWithCooldown(context, prefs, lat, lng)
                                         }
                                     }
                                 }

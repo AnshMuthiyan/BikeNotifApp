@@ -62,6 +62,12 @@ data class ChargeRecord(
     val miles: Float
 )
 
+enum class RideClassification {
+    BIKE_RIDE,          // 0 suspicious measures
+    UNCERTAIN_ASK_USER, // Exactly 1 suspicious measure -> ask user via notification
+    CAR_DRIVE           // Any 2 or all 3 suspicious measures -> assume car ride automatically
+}
+
 object RideDataStore {
     private const val CURRENT_RIDE_FILE = "current_ride.json"
     private const val LEGACY_LATEST_RIDE_FILE = "latest_ride.json"
@@ -74,21 +80,29 @@ object RideDataStore {
     const val MIN_VALID_RIDE_DISTANCE_METERS = 80f
 
     /**
-     * Checks whether a ride's speed and duration make it ambiguous between a bike ride and a car drive.
-     * User rule:
-     * - If avg speed > 15 mph OR max speed > 25 mph, check how long the ride was:
-     *   if it was longer than 10 minutes, ask if it was a drive or a bike ride.
-     * - Also if a shorter ride (< 10 min) has extreme speed (avg > 22 mph or max > 37 mph), ask as well.
+     * Evaluates the 3 measures:
+     * 1. Time of ride > 10 minutes
+     * 2. Average speed > 15 mph
+     * 3. Max speed > 25 mph
+     *
+     * - If 2 or 3 measures are triggered -> CAR_DRIVE (automatically assume car ride)
+     * - If 1 measure is triggered -> UNCERTAIN_ASK_USER (send notification asking Bike vs Drive)
+     * - If 0 measures are triggered -> BIKE_RIDE
      */
-    fun isRideUncertain(stats: CurrentRideStats): Boolean {
-        val speedSuspicious = stats.avgSpeedMph > 15.0f || stats.maxSpeedMph > 25.0f
-        if (speedSuspicious && stats.durationMinutes >= 10.0f) {
-            return true
+    fun classifyRide(stats: CurrentRideStats): RideClassification {
+        val timeSuspicious = stats.durationMinutes > 10.0f
+        val avgSpeedSuspicious = stats.avgSpeedMph > 15.0f
+        val maxSpeedSuspicious = stats.maxSpeedMph > 25.0f
+
+        val suspiciousCount = (if (timeSuspicious) 1 else 0) +
+            (if (avgSpeedSuspicious) 1 else 0) +
+            (if (maxSpeedSuspicious) 1 else 0)
+
+        return when {
+            suspiciousCount >= 2 -> RideClassification.CAR_DRIVE
+            suspiciousCount == 1 -> RideClassification.UNCERTAIN_ASK_USER
+            else -> RideClassification.BIKE_RIDE
         }
-        if (stats.durationMinutes < 10.0f && (stats.avgSpeedMph > 22.0f || stats.maxSpeedMph > 37.0f)) {
-            return true
-        }
-        return false
     }
 
     /**
@@ -118,6 +132,19 @@ object RideDataStore {
         }
     }
 
+    /**
+     * Cancels the current in-progress ride because it was classified as a car trip.
+     * Removes only the current ride's ID from ride_history.json, keeping all past bike rides intact.
+     */
+    fun cancelCurrentRideAsCar(context: Context) {
+        val currentPoints = getCurrentRidePoints(context)
+        val currentId = currentPoints.firstOrNull()?.ts
+        clearCurrentRideBuffer(context)
+        if (currentId != null) {
+            removeRideFromHistoryFileOnly(context, currentId)
+        }
+    }
+
     fun addPoint(context: Context, lat: Double, lng: Double, ts: Long, speedMps: Float): CurrentRideStats {
         migrateLegacyRideIfNeeded(context)
         val file = File(context.filesDir, CURRENT_RIDE_FILE)
@@ -140,35 +167,68 @@ object RideDataStore {
         val points = parsePointsArray(array)
         val stats = computeStats(points)
 
-        // Live-upsert into ride history if it has at least 2 points and >= 80m distance
+        // Live-upsert into ride history if it has at least 2 points, >= 80m distance, and is not a CAR_DRIVE
         if (points.size >= 2 && stats.totalDistanceMeters >= MIN_VALID_RIDE_DISTANCE_METERS) {
-            val uncertain = isRideUncertain(stats)
-            val record = RideRecord(
-                id = points.first().ts,
-                startTime = points.first().ts,
-                endTime = points.last().ts,
-                distanceMeters = stats.totalDistanceMeters,
-                maxSpeedMps = stats.maxSpeedMps,
-                avgSpeedMps = stats.avgSpeedMps,
-                points = points,
-                pendingConfirmation = uncertain
-            )
-            upsertRideInHistory(context, record)
+            when (classifyRide(stats)) {
+                RideClassification.CAR_DRIVE -> {
+                    removeRideFromHistoryFileOnly(context, points.first().ts)
+                }
+                RideClassification.UNCERTAIN_ASK_USER -> {
+                    upsertRideInHistory(
+                        context,
+                        RideRecord(
+                            id = points.first().ts,
+                            startTime = points.first().ts,
+                            endTime = points.last().ts,
+                            distanceMeters = stats.totalDistanceMeters,
+                            maxSpeedMps = stats.maxSpeedMps,
+                            avgSpeedMps = stats.avgSpeedMps,
+                            points = points,
+                            pendingConfirmation = true
+                        )
+                    )
+                }
+                RideClassification.BIKE_RIDE -> {
+                    upsertRideInHistory(
+                        context,
+                        RideRecord(
+                            id = points.first().ts,
+                            startTime = points.first().ts,
+                            endTime = points.last().ts,
+                            distanceMeters = stats.totalDistanceMeters,
+                            maxSpeedMps = stats.maxSpeedMps,
+                            avgSpeedMps = stats.avgSpeedMps,
+                            points = points,
+                            pendingConfirmation = false
+                        )
+                    )
+                }
+            }
         }
 
         return stats
     }
 
     /**
-     * Finalizes the current ride buffer into history and returns the finalized RideRecord (if valid).
+     * Finalizes the current ride buffer.
+     * - If classifyRide(stats) == CAR_DRIVE (2+ suspicious measures), discards the ride, rolls back the odometer, and returns null.
+     * - Otherwise saves the RideRecord to history and returns it.
      */
     fun finalizeCurrentRideIfValid(context: Context): RideRecord? {
         val points = getCurrentRidePoints(context)
         var finalizedRecord: RideRecord? = null
         if (points.size >= 2) {
             val stats = computeStats(points)
-            if (stats.totalDistanceMeters >= MIN_VALID_RIDE_DISTANCE_METERS) {
-                val uncertain = isRideUncertain(stats)
+            val classification = classifyRide(stats)
+            if (classification == RideClassification.CAR_DRIVE) {
+                // Roll back odometer to pre-ride value and remove from history
+                val prefs = context.getSharedPreferences("EBikePrefs", Context.MODE_PRIVATE)
+                val currentOdo = prefs.getFloat("TOTAL_BIKE_METERS", 0f)
+                val fallbackOdo = (currentOdo - stats.totalDistanceMeters).coerceAtLeast(0f)
+                val originalOdo = prefs.getFloat("ODOMETER_AT_RIDE_START", fallbackOdo)
+                prefs.edit().putFloat("TOTAL_BIKE_METERS", originalOdo).apply()
+                removeRideFromHistoryFileOnly(context, points.first().ts)
+            } else if (stats.totalDistanceMeters >= MIN_VALID_RIDE_DISTANCE_METERS) {
                 finalizedRecord = RideRecord(
                     id = points.first().ts,
                     startTime = points.first().ts,
@@ -177,7 +237,7 @@ object RideDataStore {
                     maxSpeedMps = stats.maxSpeedMps,
                     avgSpeedMps = stats.avgSpeedMps,
                     points = points,
-                    pendingConfirmation = uncertain
+                    pendingConfirmation = (classification == RideClassification.UNCERTAIN_ASK_USER)
                 )
                 upsertRideInHistory(context, finalizedRecord)
             }
@@ -211,30 +271,13 @@ object RideDataStore {
         val allRides = getAllRides(context)
         val targetRide = allRides.find { it.id == rideId }
 
-        // If current_ride.json matches this rideId, clear it too
         val currentPts = getCurrentRidePoints(context)
         if (currentPts.isNotEmpty() && currentPts.first().ts == rideId) {
             clearCurrentRideBuffer(context)
         }
 
-        val file = File(context.filesDir, RIDE_HISTORY_FILE)
-        if (file.exists()) {
-            try {
-                val array = JSONArray(file.readText())
-                val updated = JSONArray()
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    if (obj.optLong("id") != rideId) {
-                        updated.put(obj)
-                    }
-                }
-                file.writeText(updated.toString())
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
+        removeRideFromHistoryFileOnly(context, rideId)
 
-        // Subtract deleted ride's distance from TOTAL_BIKE_METERS if it occurred after the last charge reset
         if (targetRide != null) {
             val prefs = context.getSharedPreferences("EBikePrefs", Context.MODE_PRIVATE)
             val lastChargeResetTs = prefs.getLong("LAST_CHARGE_RESET_TS", 0L)
@@ -246,6 +289,24 @@ object RideDataStore {
         }
 
         return targetRide
+    }
+
+    private fun removeRideFromHistoryFileOnly(context: Context, rideId: Long) {
+        val file = File(context.filesDir, RIDE_HISTORY_FILE)
+        if (!file.exists()) return
+        try {
+            val array = JSONArray(file.readText())
+            val updated = JSONArray()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                if (obj.optLong("id") != rideId) {
+                    updated.put(obj)
+                }
+            }
+            file.writeText(updated.toString())
+        } catch (e: Exception) {
+            // Ignore
+        }
     }
 
     fun getCurrentRidePoints(context: Context): List<RidePoint> {
@@ -292,13 +353,14 @@ object RideDataStore {
             }
         }
 
-        // Also check if there's an active current ride not yet in history
+        // Also check if there's an active current ride not yet in history (only if not classified as a car drive)
         val currentPts = getCurrentRidePoints(context)
         if (currentPts.size >= 2) {
             val currentId = currentPts.first().ts
             if (historyList.none { it.id == currentId }) {
                 val stats = computeStats(currentPts)
-                if (stats.totalDistanceMeters >= 20f) {
+                val classification = classifyRide(stats)
+                if (stats.totalDistanceMeters >= 20f && classification != RideClassification.CAR_DRIVE) {
                     historyList.add(
                         RideRecord(
                             id = currentId,
@@ -308,7 +370,7 @@ object RideDataStore {
                             maxSpeedMps = stats.maxSpeedMps,
                             avgSpeedMps = stats.avgSpeedMps,
                             points = currentPts,
-                            pendingConfirmation = isRideUncertain(stats)
+                            pendingConfirmation = (classification == RideClassification.UNCERTAIN_ASK_USER)
                         )
                     )
                 }
@@ -403,7 +465,8 @@ object RideDataStore {
             val pts = parsePointsArray(JSONArray(legacyFile.readText()))
             if (pts.size >= 2) {
                 val stats = computeStats(pts)
-                if (stats.totalDistanceMeters >= 30f) {
+                val classification = classifyRide(stats)
+                if (stats.totalDistanceMeters >= 30f && classification != RideClassification.CAR_DRIVE) {
                     val record = RideRecord(
                         id = pts.first().ts,
                         startTime = pts.first().ts,
@@ -412,7 +475,7 @@ object RideDataStore {
                         maxSpeedMps = stats.maxSpeedMps,
                         avgSpeedMps = stats.avgSpeedMps,
                         points = pts,
-                        pendingConfirmation = isRideUncertain(stats)
+                        pendingConfirmation = (classification == RideClassification.UNCERTAIN_ASK_USER)
                     )
                     upsertRideInHistory(context, record)
                 }
